@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run db:generate && npm run build",
+  "crons": [
+    {
+      "path": "/api/refresh",
+      "schedule": "0 */6 * * *"
+    }
+  ]
+}

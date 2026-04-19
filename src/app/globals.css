@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background-color: #0b0b0c;
+  color: #f4f4f5;
+  min-height: 100%;
+}
+
+::selection {
+  background: rgba(30, 144, 255, 0.4);
+  color: white;
+}
+
+@layer components {
+  .card {
+    @apply bg-bg-card border border-bg-border rounded-xl;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-accent-bright text-white hover:bg-accent-glow shadow-glow;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-text-secondary hover:bg-bg-elevated hover:text-text-primary border border-bg-border;
+  }
+  .btn-danger {
+    @apply btn bg-transparent text-red-400 hover:bg-red-500/10 border border-red-500/30;
+  }
+  .input {
+    @apply w-full bg-bg-elevated border border-bg-border rounded-md px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent-bright focus:ring-1 focus:ring-accent-bright;
+  }
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium border;
+  }
+  .badge-accent {
+    @apply badge bg-accent-bright/10 text-accent-glow border-accent-bright/30;
+  }
+  .badge-muted {
+    @apply badge bg-bg-elevated text-text-secondary border-bg-border;
+  }
+  .badge-rising {
+    @apply badge bg-emerald-500/10 text-emerald-300 border-emerald-500/30;
+  }
+  .badge-stable {
+    @apply badge bg-amber-500/10 text-amber-300 border-amber-500/30;
+  }
+  .badge-declining {
+    @apply badge bg-red-500/10 text-red-300 border-red-500/30;
+  }
+}

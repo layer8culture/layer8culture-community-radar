@@ -1,0 +1,96 @@
+// Community Radar — Prisma schema (Supabase-compatible Postgres)
+// Run `npx prisma generate` after editing.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Platform {
+  twitter
+  instagram
+  youtube
+  tiktok
+  reddit
+}
+
+enum EngagementTrend {
+  rising
+  stable
+  declining
+}
+
+enum SuggestedAction {
+  like
+  comment
+  repost
+  follow
+  dm
+  invite
+}
+
+model Influencer {
+  id                String          @id @default(cuid())
+  handle            String
+  platform          Platform
+  niche             String
+  followerCount     Int             @default(0)
+  postingFrequency  Int             @default(0)
+  engagementTrend   EngagementTrend @default(stable)
+  relevanceScore    Int             @default(50)
+  socialLinks       Json            @default("[]")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  relationships     Relationship[]
+
+  @@unique([handle, platform])
+}
+
+model Hashtag {
+  id             String    @id @default(cuid())
+  name           String
+  platform       Platform
+  relevanceScore Int       @default(50)
+  lastCheckedAt  DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+
+  @@unique([name, platform])
+}
+
+model Post {
+  id                  String          @id @default(cuid())
+  content             String
+  creatorHandle       String
+  platform            Platform
+  engagementVelocity  Int             @default(0)
+  relevanceScore      Int             @default(50)
+  opportunityScore    Int             @default(0)
+  suggestedAction     SuggestedAction @default(comment)
+  url                 String?
+  sourceHashtag       String?
+  createdAt           DateTime        @default(now())
+}
+
+model Relationship {
+  id                String       @id @default(cuid())
+  creatorHandle     String
+  platform          Platform
+  liked             Boolean      @default(false)
+  commented         Boolean      @default(false)
+  followed          Boolean      @default(false)
+  replied           Boolean      @default(false)
+  invited           Boolean      @default(false)
+  collaboratorScore Int          @default(0)
+  notes             String       @default("")
+  influencerId      String?
+  influencer        Influencer?  @relation(fields: [influencerId], references: [id], onDelete: SetNull)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([creatorHandle, platform])
+}
