@@ -168,3 +168,4 @@ See [`DEPLOY.md`](./DEPLOY.md) for the full step-by-step checklist (root directo
 - **State management** is intentionally simple (`useState`/`useEffect`). No Redux, no Zustand.
 - **Server vs client** — pages that need fresh data on every load (Dashboard) are server components calling the store directly. Interactive pages (Opportunities, Influencers, Hashtags, Relationships) are client components that hit the API routes.
 # layer8culture-community-radar
+# layer8culture-community-radar
