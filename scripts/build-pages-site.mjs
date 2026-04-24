@@ -119,15 +119,39 @@ const html = String.raw`<!doctype html>
       }
 
       .mark {
-        display: grid;
-        place-items: center;
         width: 38px;
         height: 38px;
         border-radius: 12px;
-        background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        color: white;
-        font-weight: 800;
+        color: var(--accent-2);
+        background:
+          radial-gradient(circle at center, rgba(112, 225, 255, 0.98) 0 3px, transparent 4px),
+          radial-gradient(circle at center, transparent 0 10px, rgba(112, 225, 255, 0.28) 11px 12px, transparent 13px),
+          radial-gradient(circle at center, transparent 0 17px, rgba(47, 140, 255, 0.45) 18px 19px, transparent 20px),
+          linear-gradient(135deg, rgba(47, 140, 255, 0.22), rgba(112, 225, 255, 0.1));
+        border: 1px solid rgba(112, 225, 255, 0.42);
         box-shadow: 0 0 36px rgba(47, 140, 255, 0.45);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .mark::before {
+        content: "";
+        position: absolute;
+        left: 18px;
+        top: 5px;
+        width: 1px;
+        height: 28px;
+        background: linear-gradient(to bottom, transparent, rgba(112, 225, 255, 0.9), transparent);
+      }
+
+      .mark::after {
+        content: "";
+        position: absolute;
+        left: 8px;
+        top: 18px;
+        width: 22px;
+        height: 1px;
+        background: linear-gradient(to right, transparent, rgba(112, 225, 255, 0.9), transparent);
       }
 
       .brand strong {
@@ -501,7 +525,7 @@ const html = String.raw`<!doctype html>
   <body>
     <header class="wrap nav">
       <a class="brand" href="./" aria-label="Community Radar home">
-        <span class="mark">8</span>
+        <span class="mark" aria-hidden="true"></span>
         <span>
           <strong>Community Radar</strong>
           <span>Layer8Culture</span>
