@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
+import { buildSeedInfluencers } from "@/lib/mockData";
 import { deleteInfluencer, getInfluencer, updateInfluencer } from "@/lib/store";
 import { sanitizeInfluencerPatch } from "@/lib/validation";
 
-export const dynamic = "force-dynamic";
+export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
+
+export function generateStaticParams() {
+  return buildSeedInfluencers().map((influencer) => ({ id: influencer.id }));
+}
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const inf = await getInfluencer(params.id);

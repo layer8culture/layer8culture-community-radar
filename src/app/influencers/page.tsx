@@ -5,6 +5,7 @@ import Link from "next/link";
 import { PageHeader, EmptyState, PlatformBadge, TrendBadge, ScoreBar } from "@/components/ui/Primitives";
 import { InfluencerForm } from "@/components/InfluencerForm";
 import { SocialLinks } from "@/components/SocialLinks";
+import { isStaticExport, listStaticInfluencers } from "@/lib/staticMode";
 import type { Influencer } from "@/lib/types";
 import { Platforms } from "@/lib/types";
 
@@ -22,6 +23,11 @@ export default function InfluencersPage() {
   async function load() {
     setError(null);
     try {
+      if (isStaticExport) {
+        setInfluencers(await listStaticInfluencers());
+        return;
+      }
+
       const r = await fetch("/api/influencers");
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();

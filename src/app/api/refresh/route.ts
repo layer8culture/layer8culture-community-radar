@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { runIngestion } from "@/lib/ingest";
 
-export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 export const maxDuration = 60;
+export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
 
 // Triggered manually from the UI ("Refresh now") or by a cron job.
 // Optional protection: set CRON_SECRET in env and call with header

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createInfluencer, listInfluencers } from "@/lib/store";
 import { Platforms, EngagementTrends } from "@/lib/types";
 
-export const dynamic = "force-dynamic";
+export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
 
 export async function GET() {
   const data = await listInfluencers();

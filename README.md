@@ -32,6 +32,28 @@ Open <http://localhost:3000>. The app **runs out of the box on seeded mock data*
 
 ---
 
+## GitHub Pages demo
+
+This repo can publish a static GitHub Pages demo at:
+
+```text
+https://layer8culture.github.io/layer8culture-community-radar/
+```
+
+GitHub Pages is static-only, so the Pages build uses seeded browser-local demo data instead of the Next.js API routes, Supabase, or AI providers. Normal deployments still use the full server/API behavior.
+
+1. Push to `main`.
+2. In GitHub, open **Settings -> Pages** and set **Source** to **GitHub Actions**.
+3. The `Deploy GitHub Pages` workflow builds with `NEXT_PUBLIC_STATIC_EXPORT=true` and deploys the generated `out/` artifact.
+
+To test the same export locally:
+
+```bash
+NEXT_PUBLIC_STATIC_EXPORT=true npm run build
+```
+
+---
+
 ## Environment variables
 
 Copy `.env.example` → `.env.local`:

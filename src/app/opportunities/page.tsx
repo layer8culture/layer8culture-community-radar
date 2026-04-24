@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { OpportunityCard } from "@/components/OpportunityCard";
 import { PageHeader, EmptyState } from "@/components/ui/Primitives";
+import {
+  isStaticExport,
+  listStaticPosts,
+} from "@/lib/staticMode";
 import type { Post } from "@/lib/types";
 import { Platforms } from "@/lib/types";
 
@@ -23,6 +27,11 @@ export default function OpportunityFeedPage() {
   const [report, setReport] = useState<RefreshReport | null>(null);
 
   async function loadPosts() {
+    if (isStaticExport) {
+      setPosts(await listStaticPosts());
+      return;
+    }
+
     const r = await fetch("/api/opportunities");
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
@@ -38,6 +47,17 @@ export default function OpportunityFeedPage() {
   }, []);
 
   async function refresh() {
+    if (isStaticExport) {
+      setReport({
+        ok: true,
+        durationMs: 0,
+        perHashtag: [],
+        totals: { fetched: posts?.length ?? 0, influencersUpserted: 0 },
+        skipped: [{ hashtag: "all", platform: "github-pages", reason: "static demo mode" }],
+      });
+      return;
+    }
+
     setRefreshing(true);
     setError(null);
     setReport(null);
