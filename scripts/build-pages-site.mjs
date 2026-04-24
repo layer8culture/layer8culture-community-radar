@@ -1,6 +1,7 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 
 const outDir = new URL("../out/", import.meta.url);
+const screenshotsDir = new URL("screenshots/", outDir);
 
 const features = [
   {
@@ -31,6 +32,186 @@ const steps = [
   ["2", "Prioritize", "Community Radar scores each signal so the most relevant conversations and creators show up first."],
   ["3", "Engage", "Use the daily action plan and comment suggestions to participate with context instead of chasing vanity metrics."],
 ];
+
+const screenshots = [
+  {
+    file: "daily-actions.svg",
+    title: "Daily action dashboard",
+    caption: "A focused queue of posts to comment on, creators to follow, conversations to join, and one high-fit collaborator to invite.",
+  },
+  {
+    file: "opportunity-feed.svg",
+    title: "Opportunity feed",
+    caption: "Ranked community signals with opportunity, relevance, and velocity scores so the strongest conversations surface first.",
+  },
+  {
+    file: "creator-tracker.svg",
+    title: "Creator tracker",
+    caption: "A lightweight creator CRM for handles, platforms, niches, engagement trends, social links, and relationship context.",
+  },
+];
+
+const screenshotSvgs = {
+  "daily-actions.svg": screenshotShell(
+    "Today's Actions",
+    "Your daily community-engagement plan, ranked by opportunity.",
+    [
+      statRow("Posts to comment on", "5", "High-value targets", "#70e1ff"),
+      statRow("Influencers to follow", "3", "Not yet in network", "#46d39a"),
+      statRow("Conversations to join", "2", "Trending in niche", "#ffc857"),
+      statRow("Creator to invite", "1", "Top collab candidate", "#ff7ab6"),
+    ].join(""),
+    [
+      cardRow("@founder_signal", "AI agents are changing how small teams ship...", "comment", "92"),
+      cardRow("@culturestack", "The next creator economy moat is trust at scale.", "join", "84"),
+      cardRow("@builderops", "Community-led distribution beats paid reach when...", "invite", "88"),
+    ].join(""),
+  ),
+  "opportunity-feed.svg": screenshotShell(
+    "Opportunity Feed",
+    "Posts ranked by opportunity score. Generate authentic comments inline.",
+    filterBar("Platform: All", "Min score: 70", "12 posts"),
+    [
+      opportunityRow("@makerlane", "YouTube", "Relevance", "88", "Velocity", "91", "Opportunity", "94"),
+      opportunityRow("@indieops", "Reddit", "Relevance", "82", "Velocity", "79", "Opportunity", "86"),
+      opportunityRow("@creatortools", "YouTube", "Relevance", "77", "Velocity", "72", "Opportunity", "81"),
+    ].join(""),
+  ),
+  "creator-tracker.svg": screenshotShell(
+    "Influencers",
+    "Track creators, niches, and engagement trends.",
+    filterBar("Search: creator or niche", "All platforms", "34 influencers"),
+    [
+      tableRow("@founder_signal", "YouTube", "AI builders", "rising", "94"),
+      tableRow("@culturestack", "Reddit", "Creator economy", "stable", "87"),
+      tableRow("@makerlane", "YouTube", "Solo founders", "rising", "83"),
+      tableRow("@indieops", "Reddit", "Ops systems", "rising", "79"),
+    ].join(""),
+  ),
+};
+
+function screenshotShell(title, subtitle, topContent, bodyContent) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="820" viewBox="0 0 1280 820" role="img" aria-labelledby="title desc">
+  <title id="title">${escapeXml(title)} screenshot</title>
+  <desc id="desc">${escapeXml(subtitle)}</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101722"/>
+      <stop offset="1" stop-color="#06070a"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2f8cff"/>
+      <stop offset="1" stop-color="#70e1ff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="28" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="820" fill="url(#bg)"/>
+  <circle cx="1040" cy="40" r="360" fill="#2f8cff" opacity="0.12"/>
+  <circle cx="120" cy="150" r="280" fill="#70e1ff" opacity="0.08"/>
+  <rect x="54" y="50" width="1172" height="720" rx="34" fill="#0b0f16" stroke="#273142" filter="url(#shadow)"/>
+  <rect x="54" y="50" width="230" height="720" rx="34" fill="#111722" stroke="#273142"/>
+  <rect x="78" y="82" width="42" height="42" rx="12" fill="url(#accent)"/>
+  <text x="99" y="109" text-anchor="middle" fill="#ffffff" font-size="22" font-family="Arial, sans-serif" font-weight="700">8</text>
+  <text x="136" y="99" fill="#f4f7fb" font-size="18" font-family="Arial, sans-serif" font-weight="700">Community Radar</text>
+  <text x="136" y="120" fill="#9aa8bd" font-size="11" font-family="Arial, sans-serif" letter-spacing="2">LAYER8CULTURE</text>
+  ${navItem(92, "Dashboard", true)}
+  ${navItem(146, "Opportunity Feed", false)}
+  ${navItem(200, "Influencers", false)}
+  ${navItem(254, "Hashtags", false)}
+  ${navItem(308, "Relationships", false)}
+  <text x="320" y="110" fill="#f4f7fb" font-size="32" font-family="Arial, sans-serif" font-weight="700">${escapeXml(title)}</text>
+  <text x="320" y="140" fill="#9aa8bd" font-size="16" font-family="Arial, sans-serif">${escapeXml(subtitle)}</text>
+  ${topContent}
+  ${bodyContent}
+</svg>`;
+}
+
+function navItem(y, label, active) {
+  const fill = active ? "#132740" : "transparent";
+  const stroke = active ? "#2f8cff" : "transparent";
+  const text = active ? "#70e1ff" : "#c8d2e1";
+  return `<rect x="76" y="${y}" width="184" height="38" rx="11" fill="${fill}" stroke="${stroke}" opacity="0.95"/>
+  <text x="98" y="${y + 24}" fill="${text}" font-size="14" font-family="Arial, sans-serif">${label}</text>`;
+}
+
+function statRow(label, value, hint, color) {
+  const index = statRow.index++;
+  const x = 320 + index * 215;
+  return `<rect x="${x}" y="178" width="190" height="118" rx="18" fill="#111722" stroke="#273142"/>
+  <text x="${x + 18}" y="210" fill="#9aa8bd" font-size="12" font-family="Arial, sans-serif" letter-spacing="1">${label.toUpperCase()}</text>
+  <text x="${x + 18}" y="252" fill="${color}" font-size="42" font-family="Arial, sans-serif" font-weight="700">${value}</text>
+  <text x="${x + 18}" y="278" fill="#c8d2e1" font-size="14" font-family="Arial, sans-serif">${hint}</text>`;
+}
+statRow.index = 0;
+
+function cardRow(handle, content, action, score) {
+  const index = cardRow.index++;
+  const y = 335 + index * 125;
+  return `<rect x="320" y="${y}" width="835" height="96" rx="20" fill="#111722" stroke="#273142"/>
+  <circle cx="358" cy="${y + 38}" r="20" fill="#172233" stroke="#273142"/>
+  <text x="358" y="${y + 44}" text-anchor="middle" fill="#70e1ff" font-size="14" font-family="Arial, sans-serif" font-weight="700">${handle.slice(1, 3).toUpperCase()}</text>
+  <text x="392" y="${y + 32}" fill="#f4f7fb" font-size="16" font-family="Arial, sans-serif" font-weight="700">${handle}</text>
+  <text x="392" y="${y + 58}" fill="#c8d2e1" font-size="15" font-family="Arial, sans-serif">${content}</text>
+  <rect x="1000" y="${y + 24}" width="76" height="28" rx="10" fill="#13311f" stroke="#46d39a"/>
+  <text x="1038" y="${y + 43}" text-anchor="middle" fill="#46d39a" font-size="12" font-family="Arial, sans-serif">${action}</text>
+  <text x="1115" y="${y + 51}" text-anchor="middle" fill="#70e1ff" font-size="28" font-family="Arial, sans-serif" font-weight="700">${score}</text>`;
+}
+cardRow.index = 0;
+
+function filterBar(left, middle, right) {
+  return `<rect x="320" y="178" width="835" height="74" rx="18" fill="#111722" stroke="#273142"/>
+  <rect x="344" y="200" width="228" height="30" rx="10" fill="#0b0f16" stroke="#273142"/>
+  <text x="362" y="220" fill="#c8d2e1" font-size="14" font-family="Arial, sans-serif">${left}</text>
+  <rect x="590" y="200" width="190" height="30" rx="10" fill="#0b0f16" stroke="#273142"/>
+  <text x="608" y="220" fill="#c8d2e1" font-size="14" font-family="Arial, sans-serif">${middle}</text>
+  <text x="1118" y="220" text-anchor="end" fill="#9aa8bd" font-size="14" font-family="Arial, sans-serif">${right}</text>`;
+}
+
+function opportunityRow(handle, platform, labelA, valueA, labelB, valueB, labelC, valueC) {
+  const index = opportunityRow.index++;
+  const y = 290 + index * 142;
+  return `<rect x="320" y="${y}" width="835" height="112" rx="20" fill="#111722" stroke="#273142"/>
+  <text x="346" y="${y + 34}" fill="#f4f7fb" font-size="17" font-family="Arial, sans-serif" font-weight="700">${handle}</text>
+  <rect x="1046" y="${y + 18}" width="78" height="26" rx="10" fill="#172233" stroke="#273142"/>
+  <text x="1085" y="${y + 36}" text-anchor="middle" fill="#c8d2e1" font-size="12" font-family="Arial, sans-serif">${platform}</text>
+  <text x="346" y="${y + 66}" fill="#c8d2e1" font-size="15" font-family="Arial, sans-serif">Signal: conversation velocity is climbing across creator audiences.</text>
+  ${metric(348, y + 86, labelA, valueA)}
+  ${metric(568, y + 86, labelB, valueB)}
+  ${metric(788, y + 86, labelC, valueC)}
+  `;
+}
+opportunityRow.index = 0;
+
+function metric(x, y, label, value) {
+  return `<text x="${x}" y="${y}" fill="#9aa8bd" font-size="11" font-family="Arial, sans-serif">${label}</text>
+  <rect x="${x + 82}" y="${y - 10}" width="90" height="8" rx="4" fill="#273142"/>
+  <rect x="${x + 82}" y="${y - 10}" width="${Number(value) * 0.9}" height="8" rx="4" fill="#70e1ff"/>
+  <text x="${x + 184}" y="${y}" fill="#f4f7fb" font-size="12" font-family="Arial, sans-serif">${value}</text>`;
+}
+
+function tableRow(handle, platform, niche, trend, relevance) {
+  const index = tableRow.index++;
+  const y = 305 + index * 78;
+  return `<rect x="320" y="${y}" width="835" height="58" rx="14" fill="${index % 2 ? "#0f141c" : "#111722"}" stroke="#273142"/>
+  <text x="346" y="${y + 36}" fill="#f4f7fb" font-size="15" font-family="Arial, sans-serif" font-weight="700">${handle}</text>
+  <text x="520" y="${y + 36}" fill="#c8d2e1" font-size="14" font-family="Arial, sans-serif">${platform}</text>
+  <text x="670" y="${y + 36}" fill="#c8d2e1" font-size="14" font-family="Arial, sans-serif">${niche}</text>
+  <rect x="880" y="${y + 18}" width="72" height="24" rx="9" fill="#12311f" stroke="#46d39a"/>
+  <text x="916" y="${y + 35}" text-anchor="middle" fill="#46d39a" font-size="12" font-family="Arial, sans-serif">${trend}</text>
+  <text x="1096" y="${y + 37}" text-anchor="middle" fill="#70e1ff" font-size="20" font-family="Arial, sans-serif" font-weight="700">${relevance}</text>`;
+}
+tableRow.index = 0;
+
+function escapeXml(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
 const html = String.raw`<!doctype html>
 <html lang="en">
@@ -363,6 +544,39 @@ const html = String.raw`<!doctype html>
         line-height: 1.6;
       }
 
+      .screenshots {
+        display: grid;
+        gap: 28px;
+      }
+
+      .screenshot-card {
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        overflow: hidden;
+        background: var(--panel);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.34);
+      }
+
+      .screenshot-card img {
+        display: block;
+        width: 100%;
+        height: auto;
+        background: #08090b;
+      }
+
+      .screenshot-caption {
+        display: grid;
+        grid-template-columns: 0.34fr 0.66fr;
+        gap: 18px;
+        padding: 22px;
+        border-top: 1px solid var(--line);
+      }
+
+      .screenshot-caption p {
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
       .deep {
         display: grid;
         grid-template-columns: 0.82fr 1.18fr;
@@ -426,7 +640,8 @@ const html = String.raw`<!doctype html>
         .hero,
         .deep,
         .grid,
-        .strip {
+        .strip,
+        .screenshot-caption {
           grid-template-columns: 1fr;
         }
 
@@ -455,6 +670,7 @@ const html = String.raw`<!doctype html>
       </a>
       <nav class="nav-links" aria-label="Page navigation">
         <a href="#features">Features</a>
+        <a href="#screenshots">Screenshots</a>
         <a href="#how">How it works</a>
         <a href="#run">Run it</a>
       </nav>
@@ -530,6 +746,33 @@ const html = String.raw`<!doctype html>
                   ${feature.details.map((detail) => `<li>${detail}</li>`).join("")}
                 </ul>
               </article>`,
+            )
+            .join("")}
+        </div>
+      </section>
+
+      <section id="screenshots" class="wrap">
+        <div class="section-head">
+          <div>
+            <div class="eyebrow">Screenshots</div>
+            <h2>See the Community Radar workflow at a glance.</h2>
+          </div>
+          <p>
+            These static screenshots show the product concepts without turning
+            GitHub Pages back into an interactive demo.
+          </p>
+        </div>
+
+        <div class="screenshots">
+          ${screenshots
+            .map(
+              (screenshot) => `<figure class="screenshot-card">
+                <img src="./screenshots/${screenshot.file}" alt="${screenshot.title}" loading="lazy" />
+                <figcaption class="screenshot-caption">
+                  <h3>${screenshot.title}</h3>
+                  <p>${screenshot.caption}</p>
+                </figcaption>
+              </figure>`,
             )
             .join("")}
         </div>
@@ -625,8 +868,12 @@ const html = String.raw`<!doctype html>
 
 await rm(outDir, { recursive: true, force: true });
 await mkdir(outDir, { recursive: true });
+await mkdir(screenshotsDir, { recursive: true });
 await writeFile(new URL("index.html", outDir), html);
 await writeFile(new URL("404.html", outDir), html);
 await writeFile(new URL(".nojekyll", outDir), "");
+await Promise.all(
+  Object.entries(screenshotSvgs).map(([file, svg]) => writeFile(new URL(file, screenshotsDir), svg)),
+);
 
 console.log("Built GitHub Pages overview site in out/");
