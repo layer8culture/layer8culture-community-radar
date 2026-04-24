@@ -1,11 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import {
-  generateStaticComments,
-  isStaticExport,
-  upsertStaticRelationship,
-} from "@/lib/staticMode";
 import type { Post, SuggestedAction } from "@/lib/types";
 import type { CommentSource, CommentSuggestion } from "@/lib/openai";
 import { ActionBadge, PlatformBadge, ScoreBar } from "./ui/Primitives";
@@ -56,17 +51,6 @@ export function OpportunityCard({ post }: { post: Post }) {
     setLoading(true);
     setError(null);
     try {
-      if (isStaticExport) {
-        const data = await generateStaticComments({
-          postContent: post.content,
-          creatorName: post.creatorHandle,
-          platform: post.platform,
-        });
-        setComments(data.comments);
-        setSource(data.source);
-        return;
-      }
-
       const res = await fetch("/api/generate-comment", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,22 +87,6 @@ export function OpportunityCard({ post }: { post: Post }) {
         notes: actionNotes.trim(),
       };
       body[field] = true;
-      if (isStaticExport) {
-        await upsertStaticRelationship({
-          creatorHandle: post.creatorHandle,
-          platform: post.platform,
-          liked: Boolean(body.liked),
-          commented: Boolean(body.commented),
-          followed: Boolean(body.followed),
-          replied: Boolean(body.replied),
-          invited: Boolean(body.invited),
-          notes: actionNotes.trim(),
-        });
-        setActioned({ action: selectedAction, notes: actionNotes.trim() });
-        setActionOpen(false);
-        return;
-      }
-
       const res = await fetch("/api/relationships", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -321,3 +289,4 @@ function ScoreCell({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
+

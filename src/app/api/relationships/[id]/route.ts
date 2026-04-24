@@ -1,13 +1,8 @@
 import { NextResponse } from "next/server";
-import { buildSeedRelationships } from "@/lib/mockData";
 import { deleteRelationship, updateRelationship } from "@/lib/store";
 import { sanitizeRelationshipPatch } from "@/lib/validation";
 
-export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
-
-export function generateStaticParams() {
-  return buildSeedRelationships().map((relationship) => ({ id: relationship.id }));
-}
+export const dynamic = "force-dynamic";
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
   try {

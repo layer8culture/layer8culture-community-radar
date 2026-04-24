@@ -2,12 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader, EmptyState, PlatformBadge, ScoreBar } from "@/components/ui/Primitives";
-import {
-  createStaticHashtag,
-  deleteStaticHashtag,
-  isStaticExport,
-  listStaticHashtags,
-} from "@/lib/staticMode";
 import type { Hashtag, Platform } from "@/lib/types";
 import { Platforms } from "@/lib/types";
 
@@ -20,11 +14,6 @@ export default function HashtagsPage() {
 
   async function load() {
     try {
-      if (isStaticExport) {
-        setTags(await listStaticHashtags());
-        return;
-      }
-
       const r = await fetch("/api/hashtags");
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
@@ -41,13 +30,6 @@ export default function HashtagsPage() {
     if (!name.trim()) return;
     setSubmitting(true);
     try {
-      if (isStaticExport) {
-        await createStaticHashtag({ name: name.trim(), platform });
-        setName("");
-        await load();
-        return;
-      }
-
       const r = await fetch("/api/hashtags", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -65,12 +47,6 @@ export default function HashtagsPage() {
 
   async function handleDelete(id: string) {
     if (!confirm("Remove this hashtag?")) return;
-    if (isStaticExport) {
-      await deleteStaticHashtag(id);
-      await load();
-      return;
-    }
-
     await fetch(`/api/hashtags/${id}`, { method: "DELETE" });
     await load();
   }

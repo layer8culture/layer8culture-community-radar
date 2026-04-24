@@ -2,12 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader, EmptyState, PlatformBadge, ScoreBar } from "@/components/ui/Primitives";
-import {
-  isStaticExport,
-  listStaticRelationships,
-  updateStaticRelationship,
-  upsertStaticRelationship,
-} from "@/lib/staticMode";
 import type { Relationship, Platform } from "@/lib/types";
 import { Platforms } from "@/lib/types";
 
@@ -30,11 +24,6 @@ export default function RelationshipsPage() {
 
   async function load() {
     try {
-      if (isStaticExport) {
-        setRels(await listStaticRelationships());
-        return;
-      }
-
       const r = await fetch("/api/relationships");
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
@@ -49,13 +38,6 @@ export default function RelationshipsPage() {
   async function patch(id: string, patch: Partial<Relationship>) {
     setSavingId(id);
     try {
-      if (isStaticExport) {
-        const relationship = await updateStaticRelationship(id, patch);
-        if (!relationship) throw new Error("Relationship not found");
-        setRels((cur) => (cur ?? []).map((x) => (x.id === id ? relationship : x)));
-        return;
-      }
-
       const r = await fetch(`/api/relationships/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -75,16 +57,6 @@ export default function RelationshipsPage() {
     e.preventDefault();
     if (!newHandle.trim()) return;
     try {
-      if (isStaticExport) {
-        await upsertStaticRelationship({
-          creatorHandle: newHandle.trim(),
-          platform: newPlatform,
-        });
-        setNewHandle("");
-        await load();
-        return;
-      }
-
       const r = await fetch("/api/relationships", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

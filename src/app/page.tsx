@@ -3,7 +3,7 @@ import { dailySummary } from "@/lib/store";
 import { OpportunityCard } from "@/components/OpportunityCard";
 import { ActionBadge, PageHeader, PlatformBadge, ScoreBar, StatCard, TrendBadge } from "@/components/ui/Primitives";
 
-export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const summary = await dailySummary();

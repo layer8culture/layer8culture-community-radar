@@ -3,7 +3,7 @@ import { generateComments } from "@/lib/openai";
 import { Platforms } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
+export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {

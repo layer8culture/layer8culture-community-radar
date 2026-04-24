@@ -32,25 +32,23 @@ Open <http://localhost:3000>. The app **runs out of the box on seeded mock data*
 
 ---
 
-## GitHub Pages demo
+## GitHub Pages overview site
 
-This repo can publish a static GitHub Pages demo at:
+This repo publishes a static overview site at:
 
 ```text
 https://layer8culture.github.io/layer8culture-community-radar/
 ```
 
-GitHub Pages is static-only, so the Pages build uses seeded browser-local demo data instead of the Next.js API routes, Supabase, or AI providers. Normal deployments still use the full server/API behavior.
+The Pages site is **not** an interactive demo. It is a public landing page that explains what Community Radar does. The dashboard, API routes, ingestion, persistence, and AI comment generation run in the Next.js app locally or on a server deployment.
 
-1. Push to `main`.
-2. In GitHub, open **Settings -> Pages** and set **Source** to **GitHub Actions**.
-3. The `Deploy GitHub Pages` workflow builds with `NEXT_PUBLIC_STATIC_EXPORT=true` and deploys the generated `out/` artifact.
-
-To test the same export locally:
+To build the same overview artifact locally:
 
 ```bash
-NEXT_PUBLIC_STATIC_EXPORT=true npm run build
+npm run build:pages
 ```
+
+GitHub Pages deploys the generated `out/` directory through `.github/workflows/deploy-pages.yml`.
 
 ---
 

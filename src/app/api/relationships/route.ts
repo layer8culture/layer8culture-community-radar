@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { listRelationships, upsertRelationship } from "@/lib/store";
 import { Platforms } from "@/lib/types";
 
-export const dynamic = process.env.NEXT_PUBLIC_STATIC_EXPORT === "true" ? "auto" : "force-dynamic";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   return NextResponse.json({ relationships: await listRelationships() });

@@ -1,11 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import {
-  createStaticInfluencer,
-  isStaticExport,
-  updateStaticInfluencer,
-} from "@/lib/staticMode";
 import { Platforms, EngagementTrends } from "@/lib/types";
 import type { Influencer, Platform, EngagementTrend } from "@/lib/types";
 
@@ -38,25 +33,6 @@ export function InfluencerForm({
     setSubmitting(true);
     setError(null);
     try {
-      if (isStaticExport) {
-        const input = {
-          handle,
-          platform,
-          niche,
-          followerCount,
-          postingFrequency,
-          engagementTrend,
-          relevanceScore,
-        };
-        const influencer =
-          mode.kind === "edit"
-            ? await updateStaticInfluencer(mode.influencer.id, input)
-            : await createStaticInfluencer(input);
-        if (!influencer) throw new Error("Influencer not found");
-        onSaved?.(influencer);
-        return;
-      }
-
       const url = mode.kind === "edit" ? `/api/influencers/${mode.influencer.id}` : "/api/influencers";
       const method = mode.kind === "edit" ? "PATCH" : "POST";
       const res = await fetch(url, {
