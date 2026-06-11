@@ -77,18 +77,18 @@ export default function RelationshipsPage() {
         subtitle="Track every interaction you've had with each creator."
       />
 
-      <form onSubmit={add} className="card p-4 mb-6 flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-[200px]">
+      <form onSubmit={add} className="card p-4 mb-6 flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:items-end">
+        <div className="flex-1 sm:min-w-[200px]">
           <label className="text-xs uppercase tracking-wider text-text-muted">Creator handle</label>
           <input className="input mt-1" value={newHandle} onChange={(e) => setNewHandle(e.target.value)} placeholder="e.g. swyx" />
         </div>
-        <div>
+        <div className="sm:w-auto">
           <label className="text-xs uppercase tracking-wider text-text-muted">Platform</label>
           <select className="input mt-1" value={newPlatform} onChange={(e) => setNewPlatform(e.target.value as Platform)}>
             {Platforms.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-        <button type="submit" className="btn-primary">+ Add relationship</button>
+        <button type="submit" className="btn-primary w-full sm:w-auto">+ Add relationship</button>
       </form>
 
       {error && <div className="card p-4 text-red-300 text-sm border-red-500/30 mb-4">{error}</div>}
@@ -101,21 +101,21 @@ export default function RelationshipsPage() {
         <div className="space-y-3">
           {rels.map((r) => (
             <div key={r.id} className="card p-4">
-              <div className="flex items-center justify-between mb-3 gap-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-10 h-10 rounded-full bg-bg-elevated border border-bg-border flex items-center justify-center text-xs font-mono text-accent-glow shrink-0">
                     {r.creatorHandle.slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium">@{r.creatorHandle}</div>
-                    <div className="text-[11px] text-text-muted">Updated {new Date(r.updatedAt).toLocaleString()}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">@{r.creatorHandle}</div>
+                    <div className="text-[11px] text-text-muted truncate">Updated {new Date(r.updatedAt).toLocaleString()}</div>
                   </div>
                   <PlatformBadge platform={r.platform} />
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className="text-xs text-text-muted">Collab</span>
                   <span className="font-mono text-xs w-7 text-right">{r.collaboratorScore}</span>
-                  <div className="w-24"><ScoreBar score={r.collaboratorScore} /></div>
+                  <div className="w-24 sm:w-24 flex-1 sm:flex-none"><ScoreBar score={r.collaboratorScore} /></div>
                 </div>
               </div>
 

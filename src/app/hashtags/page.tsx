@@ -58,8 +58,8 @@ export default function HashtagsPage() {
         subtitle="Watch hashtags across platforms. Background fetch is mocked for the MVP."
       />
 
-      <form onSubmit={handleAdd} className="card p-4 mb-6 flex flex-wrap gap-3 items-end">
-        <div className="flex-1 min-w-[200px]">
+      <form onSubmit={handleAdd} className="card p-4 mb-6 flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:items-end">
+        <div className="flex-1 sm:min-w-[200px]">
           <label className="text-xs uppercase tracking-wider text-text-muted">Hashtag</label>
           <input
             value={name}
@@ -68,7 +68,7 @@ export default function HashtagsPage() {
             placeholder="e.g. buildinpublic (no #)"
           />
         </div>
-        <div>
+        <div className="sm:w-auto">
           <label className="text-xs uppercase tracking-wider text-text-muted">Platform</label>
           <select
             value={platform}
@@ -78,7 +78,7 @@ export default function HashtagsPage() {
             {Platforms.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         </div>
-        <button type="submit" disabled={submitting} className="btn-primary">
+        <button type="submit" disabled={submitting} className="btn-primary w-full sm:w-auto">
           {submitting ? "Adding…" : "+ Add"}
         </button>
       </form>

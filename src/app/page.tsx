@@ -45,15 +45,17 @@ export default async function DashboardPage() {
                   href={`/influencers/${i.id}`}
                   className="flex items-center gap-3 p-4 hover:bg-bg-elevated/40 transition-colors"
                 >
-                  <div className="w-10 h-10 rounded-full bg-bg-elevated border border-bg-border flex items-center justify-center text-xs font-mono text-accent-glow">
+                  <div className="w-10 h-10 rounded-full bg-bg-elevated border border-bg-border flex items-center justify-center text-xs font-mono text-accent-glow shrink-0">
                     {i.handle.slice(0, 2).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium">@{i.handle}</div>
+                    <div className="text-sm font-medium truncate">@{i.handle}</div>
                     <div className="text-xs text-text-muted truncate">{i.niche} · {i.followerCount.toLocaleString()} followers</div>
                   </div>
-                  <PlatformBadge platform={i.platform} />
-                  <TrendBadge trend={i.engagementTrend} />
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <PlatformBadge platform={i.platform} />
+                    <TrendBadge trend={i.engagementTrend} />
+                  </div>
                 </Link>
               ))
             )}
@@ -94,13 +96,13 @@ export default async function DashboardPage() {
             href={`/influencers/${summary.creatorToInvite.id}`}
             className="card block p-5 hover:border-accent-bright/40 transition-colors"
           >
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-accent-bright/15 border border-accent-bright/40 flex items-center justify-center text-base font-mono text-accent-glow">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div className="w-14 h-14 rounded-full bg-accent-bright/15 border border-accent-bright/40 flex items-center justify-center text-base font-mono text-accent-glow shrink-0">
                 {summary.creatorToInvite.handle.slice(0, 2).toUpperCase()}
               </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-base font-semibold">@{summary.creatorToInvite.handle}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-base font-semibold truncate">@{summary.creatorToInvite.handle}</span>
                   <PlatformBadge platform={summary.creatorToInvite.platform} />
                   <TrendBadge trend={summary.creatorToInvite.engagementTrend} />
                 </div>
@@ -108,7 +110,7 @@ export default async function DashboardPage() {
                   {summary.creatorToInvite.niche} · {summary.creatorToInvite.followerCount.toLocaleString()} followers · relevance {summary.creatorToInvite.relevanceScore}
                 </div>
               </div>
-              <span className="badge-accent">Invite to collab</span>
+              <span className="badge-accent self-start sm:self-center shrink-0">Invite to collab</span>
             </div>
           </Link>
         ) : (

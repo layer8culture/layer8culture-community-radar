@@ -30,7 +30,7 @@ export interface RawPost {
   creatorLinks?: SocialLink[];
 }
 
-const SUPPORTED_PLATFORMS: Platform[] = ["youtube", "reddit"];
+const SUPPORTED_PLATFORMS: Platform[] = ["youtube", "reddit", "tiktok", "instagram"];
 
 // Velocity heuristic: log-scaled engagement-per-hour, capped at 100.
 function normalizeVelocity(engagementCount: number, ageHours: number): number {
@@ -458,6 +458,97 @@ async function fetchRedditUserMeta(
   return out;
 }
 
+// ---------- Instagram (official Graph API hashtag search) ----------
+//
+// The ONLY ToS-compliant way to read other creators' Instagram posts is the
+// Instagram Graph API "Hashtag Search" — and it has real constraints:
+//   - Requires an Instagram Business/Creator account linked to a Facebook Page,
+//     a long-lived access token, and the IG user id.
+//   - You may query at most 30 unique hashtags per account per rolling 7 days.
+//   - Hashtag media does NOT expose the owner's username (privacy), so we derive
+//     a handle from an @mention in the caption when present, else a placeholder.
+//
+// Gated entirely behind INSTAGRAM_ACCESS_TOKEN + INSTAGRAM_USER_ID. Without
+// them the orchestrator skips instagram hashtags with a clear reason instead of
+// the generic "not supported".
+async function fetchInstagram(query: string, max = 15): Promise<RawPost[]> {
+  const token = process.env.INSTAGRAM_ACCESS_TOKEN?.trim();
+  const userId = process.env.INSTAGRAM_USER_ID?.trim();
+  if (!token || !userId) {
+    throw new Error("INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_USER_ID not set");
+  }
+  const apiVersion = process.env.INSTAGRAM_API_VERSION?.trim() || "v21.0";
+  const base = `https://graph.facebook.com/${apiVersion}`;
+  const edge = (process.env.INSTAGRAM_MEDIA_EDGE?.trim() === "top_media"
+    ? "top_media"
+    : "recent_media") as "recent_media" | "top_media";
+
+  const tag = query.replace(/^#/, "").trim();
+  if (!tag) return [];
+
+  // 1) Resolve the hashtag id.
+  const searchUrl = new URL(`${base}/ig_hashtag_search`);
+  searchUrl.searchParams.set("user_id", userId);
+  searchUrl.searchParams.set("q", tag);
+  searchUrl.searchParams.set("access_token", token);
+  const sRes = await fetch(searchUrl.toString());
+  if (!sRes.ok) throw new Error(`Instagram hashtag search ${sRes.status}: ${await sRes.text()}`);
+  const sData = (await sRes.json()) as { data?: Array<{ id: string }> };
+  const hashtagId = sData.data?.[0]?.id;
+  if (!hashtagId) return [];
+
+  // 2) Pull recent (or top) media tagged with it.
+  const mediaUrl = new URL(`${base}/${hashtagId}/${edge}`);
+  mediaUrl.searchParams.set("user_id", userId);
+  mediaUrl.searchParams.set(
+    "fields",
+    "id,caption,permalink,timestamp,like_count,comments_count,media_type",
+  );
+  mediaUrl.searchParams.set("limit", String(Math.min(50, max)));
+  mediaUrl.searchParams.set("access_token", token);
+  const mRes = await fetch(mediaUrl.toString());
+  if (!mRes.ok) throw new Error(`Instagram ${edge} ${mRes.status}: ${await mRes.text()}`);
+  const mData = (await mRes.json()) as {
+    data?: Array<{
+      id: string;
+      caption?: string;
+      permalink?: string;
+      timestamp?: string;
+      like_count?: number;
+      comments_count?: number;
+      media_type?: string;
+    }>;
+  };
+
+  const out: RawPost[] = [];
+  for (const m of mData.data ?? []) {
+    if (!m.id) continue;
+    const caption = m.caption?.trim() || "(no caption)";
+    const createdAtMs = m.timestamp ? new Date(m.timestamp).getTime() : Date.now();
+    const ageHours = Math.max(1, (Date.now() - createdAtMs) / 36e5);
+    const likes = m.like_count ?? 0;
+    const comments = m.comments_count ?? 0;
+    // Hashtag media hides the owner; derive a handle from an @mention if present.
+    const mention = caption.match(/@([A-Za-z0-9._]{1,30})/)?.[1];
+    const handle = mention ?? `ig-${m.id.slice(-8)}`;
+    out.push({
+      externalId: m.id,
+      content: caption.slice(0, 280),
+      creatorHandle: handle,
+      platform: "instagram",
+      url: m.permalink ?? `https://www.instagram.com/explore/tags/${encodeURIComponent(tag)}/`,
+      createdAt: new Date(createdAtMs).toISOString(),
+      engagementCount: likes + comments * 5,
+      ageHours,
+      creatorLinks: mention
+        ? [{ platform: "instagram", url: `https://instagram.com/${mention}` }]
+        : undefined,
+    });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
 // ---------- Orchestrator ----------
 
 export interface IngestionReport {
@@ -487,50 +578,108 @@ export async function runIngestion(): Promise<IngestionReport> {
   >();
 
   const youtubeKey = !!process.env.YOUTUBE_API_KEY;
+  const tiktokEnabled =
+    String(process.env.TIKTOK_SCRAPER_ENABLED ?? "").toLowerCase() === "true";
+  const instagramConfigured =
+    !!process.env.INSTAGRAM_ACCESS_TOKEN && !!process.env.INSTAGRAM_USER_ID;
 
-  for (const tag of tags) {
-    if (!SUPPORTED_PLATFORMS.includes(tag.platform)) {
-      skipped.push({
-        hashtag: tag.name,
-        platform: tag.platform,
-        reason: "platform not yet supported by ingestion",
-      });
-      continue;
+  // Lazy handle to ingestTikTok so the heavy Playwright module is only loaded
+  // when at least one tiktok hashtag is actually processed. We use an inline
+  // shape (instead of `typeof import("./ingestTikTok")`) to avoid the circular
+  // type dependency between ingest.ts ↔ ingestTikTok.ts that confuses tsc.
+  interface TikTokModule {
+    fetchTikTok: (query: string, max?: number) => Promise<RawPost[]>;
+    closeTikTokBrowser: () => Promise<void>;
+  }
+  let tiktokModule: TikTokModule | null = null;
+  async function loadTikTokModule(): Promise<TikTokModule> {
+    if (!tiktokModule) {
+      tiktokModule = (await import("./ingestTikTok")) as TikTokModule;
     }
-    if (tag.platform === "youtube" && !youtubeKey) {
-      skipped.push({ hashtag: tag.name, platform: tag.platform, reason: "YOUTUBE_API_KEY not set" });
-      continue;
-    }
-    try {
-      const raws =
-        tag.platform === "youtube"
-          ? await fetchYouTube(tag.name)
-          : await fetchReddit(tag.name);
-      for (const r of raws) {
-        const key = `${r.platform}:${r.creatorHandle}`;
-        const prev = creatorMeta.get(key);
-        const mergedLinksMap = new Map<string, SocialLink>();
-        for (const l of [...(prev?.links ?? []), ...(r.creatorLinks ?? [])]) {
-          mergedLinksMap.set(`${l.platform}|${l.url}`, l);
+    return tiktokModule;
+  }
+
+  try {
+    for (const tag of tags) {
+      if (!SUPPORTED_PLATFORMS.includes(tag.platform)) {
+        skipped.push({
+          hashtag: tag.name,
+          platform: tag.platform,
+          reason: "platform not yet supported by ingestion",
+        });
+        continue;
+      }
+      if (tag.platform === "youtube" && !youtubeKey) {
+        skipped.push({ hashtag: tag.name, platform: tag.platform, reason: "YOUTUBE_API_KEY not set" });
+        continue;
+      }
+      if (tag.platform === "tiktok" && !tiktokEnabled) {
+        skipped.push({
+          hashtag: tag.name,
+          platform: tag.platform,
+          reason: "TIKTOK_SCRAPER_ENABLED not set",
+        });
+        continue;
+      }
+      if (tag.platform === "instagram" && !instagramConfigured) {
+        skipped.push({
+          hashtag: tag.name,
+          platform: tag.platform,
+          reason: "INSTAGRAM_ACCESS_TOKEN / INSTAGRAM_USER_ID not set",
+        });
+        continue;
+      }
+      try {
+        let raws: RawPost[];
+        if (tag.platform === "youtube") {
+          raws = await fetchYouTube(tag.name);
+        } else if (tag.platform === "tiktok") {
+          const mod = await loadTikTokModule();
+          raws = await mod.fetchTikTok(tag.name);
+        } else if (tag.platform === "instagram") {
+          raws = await fetchInstagram(tag.name);
+        } else {
+          raws = await fetchReddit(tag.name);
         }
-        creatorMeta.set(key, {
-          platform: r.platform,
-          handle: r.creatorHandle,
-          followers: Math.max(prev?.followers ?? 0, r.creatorFollowers ?? 0),
-          links: Array.from(mergedLinksMap.values()),
+        for (const r of raws) {
+          const key = `${r.platform}:${r.creatorHandle}`;
+          const prev = creatorMeta.get(key);
+          const mergedLinksMap = new Map<string, SocialLink>();
+          for (const l of [...(prev?.links ?? []), ...(r.creatorLinks ?? [])]) {
+            mergedLinksMap.set(`${l.platform}|${l.url}`, l);
+          }
+          creatorMeta.set(key, {
+            platform: r.platform,
+            handle: r.creatorHandle,
+            followers: Math.max(prev?.followers ?? 0, r.creatorFollowers ?? 0),
+            links: Array.from(mergedLinksMap.values()),
+          });
+        }
+        const posts = raws.map((r) => rawToPost(r, tag.relevanceScore, tag.name));
+        allPosts.push(...posts);
+        perHashtag.push({ hashtag: tag.name, platform: tag.platform, fetched: posts.length });
+        await touchHashtag(tag.id);
+      } catch (e) {
+        perHashtag.push({
+          hashtag: tag.name,
+          platform: tag.platform,
+          fetched: 0,
+          error: e instanceof Error ? e.message : String(e),
         });
       }
-      const posts = raws.map((r) => rawToPost(r, tag.relevanceScore, tag.name));
-      allPosts.push(...posts);
-      perHashtag.push({ hashtag: tag.name, platform: tag.platform, fetched: posts.length });
-      await touchHashtag(tag.id);
-    } catch (e) {
-      perHashtag.push({
-        hashtag: tag.name,
-        platform: tag.platform,
-        fetched: 0,
-        error: e instanceof Error ? e.message : String(e),
-      });
+    }
+  } finally {
+    // Always tear down the Chromium instance, even if the loop threw, so
+    // long-lived runtimes (App Service) don't leak browser processes between
+    // refresh invocations. tsc loses the narrowing through the closure that
+    // reassigns `tiktokModule`, so we re-read into a typed local explicitly.
+    const mod = tiktokModule as TikTokModule | null;
+    if (mod) {
+      try {
+        await mod.closeTikTokBrowser();
+      } catch {
+        // ignore — best-effort teardown
+      }
     }
   }
 

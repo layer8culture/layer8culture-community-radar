@@ -12,7 +12,7 @@
 //   OpenAI         → gpt-4o-mini         (override: OPENAI_MODEL)
 
 import OpenAI from "openai";
-import type { Platform } from "./types";
+import type { ContentFormat, ContentPlatform, Platform } from "./types";
 
 export type CommentTone = "insightful" | "encouraging" | "builder-to-builder" | "community-oriented";
 
@@ -133,5 +133,136 @@ export async function generateComments(input: CommentInput): Promise<{
   } catch (err) {
     console.error(`[generateComments] ${provider.source} failed, using fallback:`, err);
     return { source: "fallback", comments: fallbackComments(input) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Content Studio — short-form content plan generation (Instagram + TikTok)
+// ---------------------------------------------------------------------------
+//
+// This is the growth engine: turn one topic into a ready-to-shoot Reel/TikTok —
+// hook variations, a beat-by-beat script, a save/share-optimized caption, a
+// first-comment for SEO, a tuned hashtag set, an audio direction, and a CTA
+// engineered to convert non-followers. Uses the same provider selection as the
+// comment generator, with a deterministic fallback so the UI always works.
+
+export interface ContentPlanInput {
+  topic: string;
+  platform: ContentPlatform;
+  format: ContentFormat;
+  niche?: string;
+  audioIdea?: string;
+}
+
+export interface ContentPlan {
+  hooks: string[];
+  scriptBeats: string[];
+  caption: string;
+  firstComment: string;
+  hashtags: string[];
+  audioIdea: string;
+  cta: string;
+}
+
+const CONTENT_SYSTEM_PROMPT = `You are a short-form video strategist for Donville, who runs Layer8Culture — a community for builders, indie hackers, and live-coders. You write scroll-stopping Instagram Reels and TikToks that grow a following organically. You understand that on these platforms reach comes from watch-time, completion, saves, and shares to NON-followers — not from follower count. Your hooks land in the first 1-3 seconds, your scripts are tight and visual, your captions drive saves and comments, and your CTAs convert viewers into followers. Never generic, never corporate, never spammy.`;
+
+function contentUserPrompt(input: ContentPlanInput): string {
+  const platformNotes =
+    input.platform === "tiktok"
+      ? "TikTok: fast pacing, native text-on-screen, lean into trending sounds, 21-34s sweet spot, hook must survive a muted autoplay."
+      : "Instagram Reels: clean visual hook, strong on-screen text, 7-30s, optimize the caption + first comment for saves and Explore-page SEO.";
+  return [
+    `Platform: ${input.platform}. ${platformNotes}`,
+    `Format: ${input.format}.`,
+    input.niche ? `Creator niche: ${input.niche}.` : `Creator niche: developer / build-in-public / coding.`,
+    input.audioIdea ? `Suggested audio/trend to ride: ${input.audioIdea}.` : "",
+    `Topic: """${input.topic}"""`,
+    "",
+    "Produce a complete content plan as a JSON object with EXACTLY these keys:",
+    `{`,
+    `  "hooks": ["<3 distinct first-1-3-second hooks, each <120 chars>"],`,
+    `  "scriptBeats": ["<4-6 beats, each prefixed with a timestamp like '0-3s:'>"],`,
+    `  "caption": "<1-3 sentence caption that earns saves/comments, no hashtags inline>",`,
+    `  "firstComment": "<a first comment to pin: a question or SEO line that sparks replies>",`,
+    `  "hashtags": ["<6-10 tags, no # symbol, mix 1-2 broad + niche + specific>"],`,
+    `  "audioIdea": "<one concrete trending-audio or sound direction>",`,
+    `  "cta": "<one follow/save-driving call to action>"`,
+    `}`,
+    "Rules: no markdown, no emojis spam (at most 1-2 if natural), never invent fake stats, keep it shootable today. Return ONLY the JSON object.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function fallbackContentPlan(input: ContentPlanInput): ContentPlan {
+  const topic = input.topic.trim();
+  const short = topic.length > 60 ? `${topic.slice(0, 57)}…` : topic;
+  const broadTag = input.platform === "tiktok" ? "techtok" : "codingreels";
+  return {
+    hooks: [
+      `Nobody talks about this part of "${short}" — but it changed everything.`,
+      `I wish someone told me this about ${short} before I started.`,
+      `Stop scrolling if you've ever struggled with ${short}.`,
+    ],
+    scriptBeats: [
+      `0-3s: Open on the hook with bold on-screen text; face-to-cam or fast b-roll.`,
+      `3-10s: Set up the problem viewers feel about ${short}.`,
+      `10-20s: Show the turn — the demo, diff, or before/after.`,
+      `20-27s: Deliver the payoff and one concrete takeaway.`,
+      `27-30s: "${input.platform === "tiktok" ? "Save this + follow for more" : "Follow for the full series"}."`,
+    ],
+    caption: `The thing most people miss about ${short}. Save this for your next build session — and tell me if you've hit the same wall.`,
+    firstComment: `What's the part of ${short} that tripped you up the most? Drop it below and I'll make a follow-up.`,
+    hashtags: [broadTag, "buildinpublic", "indiehacker", "webdev", "programming", "softwareengineer", "learntocode"],
+    audioIdea: input.audioIdea || (input.platform === "tiktok" ? "A trending fast-paced sound; sync your reveal to the beat drop." : "A lo-fi focus beat trending on Reels under build montages."),
+    cta: input.platform === "tiktok" ? "Save this + follow for the next one." : "Follow for the full build series.",
+  };
+}
+
+function asStringArray(v: unknown, max: number): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x) => typeof x === "string" && x.trim().length > 0)
+    .map((x) => (x as string).trim().replace(/^#/, ""))
+    .slice(0, max);
+}
+
+export async function generateContentPlan(input: ContentPlanInput): Promise<{
+  source: CommentSource;
+  plan: ContentPlan;
+}> {
+  const provider = selectProvider();
+  if (!provider) return { source: "fallback", plan: fallbackContentPlan(input) };
+
+  try {
+    const completion = await provider.client.chat.completions.create({
+      model: provider.model,
+      temperature: 0.9,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: CONTENT_SYSTEM_PROMPT },
+        { role: "user", content: contentUserPrompt(input) },
+      ],
+    });
+    const raw = completion.choices[0]?.message?.content || "{}";
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const hooks = asStringArray(parsed.hooks, 4);
+    const scriptBeats = asStringArray(parsed.scriptBeats, 8);
+    if (hooks.length === 0 || scriptBeats.length === 0) {
+      return { source: "fallback", plan: fallbackContentPlan(input) };
+    }
+    const plan: ContentPlan = {
+      hooks,
+      scriptBeats,
+      caption: typeof parsed.caption === "string" ? parsed.caption.trim() : "",
+      firstComment: typeof parsed.firstComment === "string" ? parsed.firstComment.trim() : "",
+      hashtags: asStringArray(parsed.hashtags, 12),
+      audioIdea: typeof parsed.audioIdea === "string" ? parsed.audioIdea.trim() : input.audioIdea ?? "",
+      cta: typeof parsed.cta === "string" ? parsed.cta.trim() : "",
+    };
+    return { source: provider.source, plan };
+  } catch (err) {
+    console.error(`[generateContentPlan] ${provider.source} failed, using fallback:`, err);
+    return { source: "fallback", plan: fallbackContentPlan(input) };
   }
 }

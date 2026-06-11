@@ -9,31 +9,56 @@
 // for the diagnostic banner in the UI.
 
 import type {
+  ContentFormat,
+  ContentIdea,
+  ContentPlatform,
+  ContentStatus,
   EngagementTrend,
+  FollowerSnapshot,
   Hashtag,
   Influencer,
+  MyAccount,
+  MyPost,
   Platform,
   Post,
   Relationship,
   SocialLink,
   SuggestedAction,
+  Trend,
+  TrendMomentum,
+  TrendType,
 } from "./types";
 import {
+  buildSeedAccounts,
+  buildSeedContentIdeas,
+  buildSeedFollowerSnapshots,
   buildSeedHashtags,
   buildSeedInfluencers,
+  buildSeedMyPosts,
   buildSeedPosts,
   buildSeedRelationships,
+  buildSeedTrends,
 } from "./mockData";
 
 // ---------------------------------------------------------------------------
 // Backend selection
 // ---------------------------------------------------------------------------
+//
+// `usingMock` starts as a snapshot of "is DATABASE_URL unset?" but can flip to
+// `true` at runtime if Prisma can't reach the configured database (bad URL,
+// paused Supabase project, DNS failure, missing generated client, etc.). That
+// way a misconfigured `.env.local` degrades to the seeded in-memory store
+// instead of returning HTTP 500 on every page. The UI banner reads this live
+// binding via ES module live-binding semantics.
 
-export const usingMock = !process.env.DATABASE_URL;
+export let usingMock = !process.env.DATABASE_URL;
 
 // Lazy Prisma singleton. Survives Next.js hot reloads in dev via globalThis.
 type PrismaLike = import("@prisma/client").PrismaClient;
-const gp = globalThis as unknown as { __crPrisma?: PrismaLike };
+const gp = globalThis as unknown as {
+  __crPrisma?: PrismaLike;
+  __crPrismaWarned?: boolean;
+};
 
 function prisma(): PrismaLike {
   if (!gp.__crPrisma) {
@@ -42,6 +67,71 @@ function prisma(): PrismaLike {
     gp.__crPrisma = new PrismaClient();
   }
   return gp.__crPrisma;
+}
+
+// Recognize errors that mean "the DB backend is structurally unavailable"
+// (network, DNS, auth, missing generated client) vs. errors that mean
+// "this specific row/op didn't work" (unique-constraint violation, P2025
+// record-not-found, etc.). Only the former should trip the mock fallback.
+function isPrismaUnavailableError(e: unknown): boolean {
+  if (!e || typeof e !== "object") return false;
+  const err = e as { name?: string; code?: string; message?: string };
+  if (err.name === "PrismaClientInitializationError") return true;
+  if (err.name === "PrismaClientRustPanicError") return true;
+  // P1xxx = engine / connection failures. P2024 = pool timeout.
+  if (typeof err.code === "string" && (err.code.startsWith("P1") || err.code === "P2024")) {
+    return true;
+  }
+  const msg = (err.message ?? "").toLowerCase();
+  if (
+    msg.includes("enotfound") ||
+    msg.includes("econnrefused") ||
+    msg.includes("etimedout") ||
+    msg.includes("eai_again") ||
+    msg.includes("can't reach database server") ||
+    msg.includes("tenant or user not found") ||
+    msg.includes("tenant/user") ||
+    msg.includes("did not initialize") ||
+    msg.includes("@prisma/client did not initialize") ||
+    msg.includes("getaddrinfo")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function markPrismaUnavailable(e: unknown): void {
+  usingMock = true;
+  if (!gp.__crPrismaWarned) {
+    gp.__crPrismaWarned = true;
+    const reason = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[community-radar] Prisma/Postgres backend unavailable — falling back to in-memory mock store for the rest of this process.\n` +
+        `  Reason: ${reason}\n` +
+        `  Fix: clear DATABASE_URL in .env.local to silence this, or repoint it at a live Supabase project (see README).`,
+    );
+  }
+}
+
+// Wraps a Prisma operation so that infrastructure failures transparently fall
+// back to the in-memory mock equivalent. Non-infra errors (e.g. row not found
+// during update/delete) are re-thrown so existing per-method `try/catch` that
+// converts them to `null`/`false` keeps working unchanged.
+async function withPrismaFallback<T>(
+  prismaOp: () => Promise<T>,
+  mockOp: () => T | Promise<T>,
+): Promise<T> {
+  if (usingMock) return await mockOp();
+  try {
+    return await prismaOp();
+  } catch (e) {
+    if (isPrismaUnavailableError(e)) {
+      markPrismaUnavailable(e);
+      return await mockOp();
+    }
+    throw e;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -53,6 +143,11 @@ type MockState = {
   hashtags: Hashtag[];
   posts: Post[];
   relationships: Relationship[];
+  contentIdeas: ContentIdea[];
+  trends: Trend[];
+  accounts: MyAccount[];
+  snapshots: FollowerSnapshot[];
+  myPosts: MyPost[];
 };
 
 const g = globalThis as unknown as { __crMock?: MockState };
@@ -64,6 +159,11 @@ function getMock(): MockState {
       hashtags: buildSeedHashtags(),
       posts: buildSeedPosts(),
       relationships: buildSeedRelationships(),
+      contentIdeas: buildSeedContentIdeas(),
+      trends: buildSeedTrends(),
+      accounts: buildSeedAccounts(),
+      snapshots: buildSeedFollowerSnapshots(),
+      myPosts: buildSeedMyPosts(),
     };
   }
   return g.__crMock;
@@ -219,106 +319,128 @@ const fromRelationship = (r: PrismaRelationship): Relationship => ({
 // ---------------------------------------------------------------------------
 
 export async function listInfluencers(): Promise<Influencer[]> {
-  if (!usingMock) {
-    const rows = await prisma().influencer.findMany({ orderBy: { relevanceScore: "desc" } });
-    return rows.map(fromInfluencer);
-  }
-  return [...getMock().influencers].sort((a, b) => b.relevanceScore - a.relevanceScore);
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().influencer.findMany({ orderBy: { relevanceScore: "desc" } });
+      return rows.map(fromInfluencer);
+    },
+    () => [...getMock().influencers].sort((a, b) => b.relevanceScore - a.relevanceScore),
+  );
 }
 
 export async function getInfluencer(id: string): Promise<Influencer | null> {
-  if (!usingMock) {
-    const row = await prisma().influencer.findUnique({ where: { id } });
-    return row ? fromInfluencer(row) : null;
-  }
-  return getMock().influencers.find((i) => i.id === id) ?? null;
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().influencer.findUnique({ where: { id } });
+      return row ? fromInfluencer(row) : null;
+    },
+    () => getMock().influencers.find((i) => i.id === id) ?? null,
+  );
 }
 
 export async function createInfluencer(
   input: Omit<Influencer, "id" | "createdAt" | "updatedAt">,
 ): Promise<Influencer> {
-  if (!usingMock) {
-    const row = await prisma().influencer.create({
-      data: {
-        handle: input.handle,
-        platform: input.platform,
-        niche: input.niche,
-        followerCount: input.followerCount,
-        postingFrequency: input.postingFrequency,
-        engagementTrend: input.engagementTrend,
-        relevanceScore: input.relevanceScore,
-        socialLinks: normalizeSocialLinks(input.socialLinks) as unknown as object,
-      },
-    });
-    return fromInfluencer(row);
-  }
-  const now = nowIso();
-  const inf: Influencer = {
-    ...input,
-    socialLinks: normalizeSocialLinks(input.socialLinks),
-    id: newId("inf"),
-    createdAt: now,
-    updatedAt: now,
-  };
-  getMock().influencers.push(inf);
-  return inf;
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().influencer.create({
+        data: {
+          handle: input.handle,
+          platform: input.platform,
+          niche: input.niche,
+          followerCount: input.followerCount,
+          postingFrequency: input.postingFrequency,
+          engagementTrend: input.engagementTrend,
+          relevanceScore: input.relevanceScore,
+          socialLinks: normalizeSocialLinks(input.socialLinks) as unknown as object,
+        },
+      });
+      return fromInfluencer(row);
+    },
+    () => {
+      const now = nowIso();
+      const inf: Influencer = {
+        ...input,
+        socialLinks: normalizeSocialLinks(input.socialLinks),
+        id: newId("inf"),
+        createdAt: now,
+        updatedAt: now,
+      };
+      getMock().influencers.push(inf);
+      return inf;
+    },
+  );
 }
 
 export async function updateInfluencer(
   id: string,
   patch: Partial<Influencer>,
 ): Promise<Influencer | null> {
-  if (!usingMock) {
-    try {
-      const row = await prisma().influencer.update({
-        where: { id },
-        data: {
-          ...(patch.handle !== undefined && { handle: patch.handle }),
-          ...(patch.platform !== undefined && { platform: patch.platform }),
-          ...(patch.niche !== undefined && { niche: patch.niche }),
-          ...(patch.followerCount !== undefined && { followerCount: patch.followerCount }),
-          ...(patch.postingFrequency !== undefined && { postingFrequency: patch.postingFrequency }),
-          ...(patch.engagementTrend !== undefined && { engagementTrend: patch.engagementTrend }),
-          ...(patch.relevanceScore !== undefined && { relevanceScore: patch.relevanceScore }),
-          ...(patch.socialLinks !== undefined && {
-            socialLinks: normalizeSocialLinks(patch.socialLinks) as unknown as object,
-          }),
-        },
-      });
-      return fromInfluencer(row);
-    } catch {
-      return null;
-    }
-  }
-  const list = getMock().influencers;
-  const idx = list.findIndex((i) => i.id === id);
-  if (idx === -1) return null;
-  const prev = list[idx];
-  list[idx] = {
-    ...prev,
-    ...patch,
-    socialLinks:
-      patch.socialLinks !== undefined ? normalizeSocialLinks(patch.socialLinks) : prev.socialLinks,
-    id,
-    createdAt: prev.createdAt,
-    updatedAt: nowIso(),
-  };
-  return list[idx];
+  return withPrismaFallback(
+    async () => {
+      try {
+        const row = await prisma().influencer.update({
+          where: { id },
+          data: {
+            ...(patch.handle !== undefined && { handle: patch.handle }),
+            ...(patch.platform !== undefined && { platform: patch.platform }),
+            ...(patch.niche !== undefined && { niche: patch.niche }),
+            ...(patch.followerCount !== undefined && { followerCount: patch.followerCount }),
+            ...(patch.postingFrequency !== undefined && {
+              postingFrequency: patch.postingFrequency,
+            }),
+            ...(patch.engagementTrend !== undefined && { engagementTrend: patch.engagementTrend }),
+            ...(patch.relevanceScore !== undefined && { relevanceScore: patch.relevanceScore }),
+            ...(patch.socialLinks !== undefined && {
+              socialLinks: normalizeSocialLinks(patch.socialLinks) as unknown as object,
+            }),
+          },
+        });
+        return fromInfluencer(row);
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return null;
+      }
+    },
+    () => {
+      const list = getMock().influencers;
+      const idx = list.findIndex((i) => i.id === id);
+      if (idx === -1) return null;
+      const prev = list[idx];
+      list[idx] = {
+        ...prev,
+        ...patch,
+        socialLinks:
+          patch.socialLinks !== undefined
+            ? normalizeSocialLinks(patch.socialLinks)
+            : prev.socialLinks,
+        id,
+        createdAt: prev.createdAt,
+        updatedAt: nowIso(),
+      };
+      return list[idx];
+    },
+  );
 }
 
 export async function deleteInfluencer(id: string): Promise<boolean> {
-  if (!usingMock) {
-    try {
-      await prisma().influencer.delete({ where: { id } });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  const list = getMock().influencers;
-  const before = list.length;
-  getMock().influencers = list.filter((i) => i.id !== id);
-  return getMock().influencers.length < before;
+  return withPrismaFallback(
+    async () => {
+      try {
+        await prisma().influencer.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return false;
+      }
+    },
+    () => {
+      const list = getMock().influencers;
+      const before = list.length;
+      getMock().influencers = list.filter((i) => i.id !== id);
+      return getMock().influencers.length < before;
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -326,11 +448,13 @@ export async function deleteInfluencer(id: string): Promise<boolean> {
 // ---------------------------------------------------------------------------
 
 export async function listHashtags(): Promise<Hashtag[]> {
-  if (!usingMock) {
-    const rows = await prisma().hashtag.findMany({ orderBy: { relevanceScore: "desc" } });
-    return rows.map(fromHashtag);
-  }
-  return [...getMock().hashtags].sort((a, b) => b.relevanceScore - a.relevanceScore);
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().hashtag.findMany({ orderBy: { relevanceScore: "desc" } });
+      return rows.map(fromHashtag);
+    },
+    () => [...getMock().hashtags].sort((a, b) => b.relevanceScore - a.relevanceScore),
+  );
 }
 
 export async function createHashtag(input: {
@@ -339,56 +463,68 @@ export async function createHashtag(input: {
   relevanceScore?: number;
 }): Promise<Hashtag> {
   const cleanName = input.name.replace(/^#/, "");
-  if (!usingMock) {
-    const row = await prisma().hashtag.upsert({
-      where: { name_platform: { name: cleanName, platform: input.platform } },
-      update: { relevanceScore: input.relevanceScore ?? 60 },
-      create: {
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().hashtag.upsert({
+        where: { name_platform: { name: cleanName, platform: input.platform } },
+        update: { relevanceScore: input.relevanceScore ?? 60 },
+        create: {
+          name: cleanName,
+          platform: input.platform,
+          relevanceScore: input.relevanceScore ?? 60,
+        },
+      });
+      return fromHashtag(row);
+    },
+    () => {
+      const tag: Hashtag = {
+        id: newId("tag"),
         name: cleanName,
         platform: input.platform,
         relevanceScore: input.relevanceScore ?? 60,
-      },
-    });
-    return fromHashtag(row);
-  }
-  const tag: Hashtag = {
-    id: newId("tag"),
-    name: cleanName,
-    platform: input.platform,
-    relevanceScore: input.relevanceScore ?? 60,
-    lastCheckedAt: nowIso(),
-    createdAt: nowIso(),
-  };
-  getMock().hashtags.push(tag);
-  return tag;
+        lastCheckedAt: nowIso(),
+        createdAt: nowIso(),
+      };
+      getMock().hashtags.push(tag);
+      return tag;
+    },
+  );
 }
 
 export async function deleteHashtag(id: string): Promise<boolean> {
-  if (!usingMock) {
-    try {
-      await prisma().hashtag.delete({ where: { id } });
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  const list = getMock().hashtags;
-  const before = list.length;
-  getMock().hashtags = list.filter((t) => t.id !== id);
-  return getMock().hashtags.length < before;
+  return withPrismaFallback(
+    async () => {
+      try {
+        await prisma().hashtag.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return false;
+      }
+    },
+    () => {
+      const list = getMock().hashtags;
+      const before = list.length;
+      getMock().hashtags = list.filter((t) => t.id !== id);
+      return getMock().hashtags.length < before;
+    },
+  );
 }
 
 export async function touchHashtag(id: string): Promise<void> {
-  if (!usingMock) {
-    try {
-      await prisma().hashtag.update({ where: { id }, data: { lastCheckedAt: new Date() } });
-    } catch {
-      /* ignore */
-    }
-    return;
-  }
-  const t = getMock().hashtags.find((h) => h.id === id);
-  if (t) t.lastCheckedAt = nowIso();
+  await withPrismaFallback(
+    async () => {
+      try {
+        await prisma().hashtag.update({ where: { id }, data: { lastCheckedAt: new Date() } });
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+      }
+    },
+    () => {
+      const t = getMock().hashtags.find((h) => h.id === id);
+      if (t) t.lastCheckedAt = nowIso();
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -396,19 +532,23 @@ export async function touchHashtag(id: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function listPosts(): Promise<Post[]> {
-  if (!usingMock) {
-    const rows = await prisma().post.findMany({ orderBy: { opportunityScore: "desc" } });
-    return rows.map(fromPost);
-  }
-  return [...getMock().posts].sort((a, b) => b.opportunityScore - a.opportunityScore);
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().post.findMany({ orderBy: { opportunityScore: "desc" } });
+      return rows.map(fromPost);
+    },
+    () => [...getMock().posts].sort((a, b) => b.opportunityScore - a.opportunityScore),
+  );
 }
 
 export async function getPost(id: string): Promise<Post | null> {
-  if (!usingMock) {
-    const row = await prisma().post.findUnique({ where: { id } });
-    return row ? fromPost(row) : null;
-  }
-  return getMock().posts.find((p) => p.id === id) ?? null;
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().post.findUnique({ where: { id } });
+      return row ? fromPost(row) : null;
+    },
+    () => getMock().posts.find((p) => p.id === id) ?? null,
+  );
 }
 
 // Replace all posts whose platform is in `platforms` with `incoming`. Posts
@@ -418,32 +558,35 @@ export async function replacePostsForPlatforms(
   platforms: Platform[],
   incoming: Post[],
 ): Promise<void> {
-  if (!usingMock) {
-    await prisma().$transaction([
-      prisma().post.deleteMany({ where: { platform: { in: platforms as string[] as any } } }),
-      ...incoming.map((p) =>
-        prisma().post.create({
-          data: {
-            id: p.id,
-            content: p.content,
-            creatorHandle: p.creatorHandle,
-            platform: p.platform,
-            engagementVelocity: p.engagementVelocity,
-            relevanceScore: p.relevanceScore,
-            opportunityScore: p.opportunityScore,
-            suggestedAction: p.suggestedAction,
-            url: p.url ?? null,
-            sourceHashtag: p.sourceHashtag ?? null,
-            createdAt: new Date(p.createdAt),
-          },
-        }),
-      ),
-    ]);
-    return;
-  }
-  const set = new Set(platforms);
-  const m = getMock();
-  m.posts = [...m.posts.filter((p) => !set.has(p.platform)), ...incoming];
+  await withPrismaFallback(
+    async () => {
+      await prisma().$transaction([
+        prisma().post.deleteMany({ where: { platform: { in: platforms as string[] as any } } }),
+        ...incoming.map((p) =>
+          prisma().post.create({
+            data: {
+              id: p.id,
+              content: p.content,
+              creatorHandle: p.creatorHandle,
+              platform: p.platform,
+              engagementVelocity: p.engagementVelocity,
+              relevanceScore: p.relevanceScore,
+              opportunityScore: p.opportunityScore,
+              suggestedAction: p.suggestedAction,
+              url: p.url ?? null,
+              sourceHashtag: p.sourceHashtag ?? null,
+              createdAt: new Date(p.createdAt),
+            },
+          }),
+        ),
+      ]);
+    },
+    () => {
+      const set = new Set(platforms);
+      const m = getMock();
+      m.posts = [...m.posts.filter((p) => !set.has(p.platform)), ...incoming];
+    },
+  );
 }
 
 export async function upsertInfluencerByHandle(
@@ -452,33 +595,65 @@ export async function upsertInfluencerByHandle(
   patch: Partial<Omit<Influencer, "id" | "handle" | "platform" | "createdAt" | "updatedAt">>,
 ): Promise<Influencer> {
   const incomingLinks = normalizeSocialLinks(patch.socialLinks);
-  if (!usingMock) {
-    const existing = await prisma().influencer.findUnique({
-      where: { handle_platform: { handle, platform } },
-    });
-    if (existing) {
-      const mergedLinks = mergeSocialLinks(
-        normalizeSocialLinks(existing.socialLinks),
-        incomingLinks,
-      );
-      const row = await prisma().influencer.update({
+  return withPrismaFallback(
+    async () => {
+      const existing = await prisma().influencer.findUnique({
         where: { handle_platform: { handle, platform } },
+      });
+      if (existing) {
+        const mergedLinks = mergeSocialLinks(
+          normalizeSocialLinks(existing.socialLinks),
+          incomingLinks,
+        );
+        const row = await prisma().influencer.update({
+          where: { handle_platform: { handle, platform } },
+          data: {
+            relevanceScore:
+              patch.relevanceScore !== undefined
+                ? Math.max(existing.relevanceScore, patch.relevanceScore)
+                : existing.relevanceScore,
+            niche: patch.niche && !existing.niche ? patch.niche : existing.niche,
+            ...(patch.followerCount !== undefined &&
+              patch.followerCount > existing.followerCount && {
+                followerCount: patch.followerCount,
+              }),
+            socialLinks: mergedLinks as unknown as object,
+          },
+        });
+        return fromInfluencer(row);
+      }
+      const row = await prisma().influencer.create({
         data: {
-          relevanceScore:
-            patch.relevanceScore !== undefined
-              ? Math.max(existing.relevanceScore, patch.relevanceScore)
-              : existing.relevanceScore,
-          niche: patch.niche && !existing.niche ? patch.niche : existing.niche,
-          ...(patch.followerCount !== undefined && patch.followerCount > existing.followerCount && {
-            followerCount: patch.followerCount,
-          }),
-          socialLinks: mergedLinks as unknown as object,
+          handle,
+          platform,
+          niche: patch.niche ?? "discovered",
+          followerCount: patch.followerCount ?? 0,
+          postingFrequency: patch.postingFrequency ?? 0,
+          engagementTrend: patch.engagementTrend ?? "stable",
+          relevanceScore: patch.relevanceScore ?? 50,
+          socialLinks: incomingLinks as unknown as object,
         },
       });
       return fromInfluencer(row);
-    }
-    const row = await prisma().influencer.create({
-      data: {
+    },
+    () => {
+      const list = getMock().influencers;
+      const existing = list.find((i) => i.handle === handle && i.platform === platform);
+      if (existing) {
+        if (patch.relevanceScore !== undefined) {
+          existing.relevanceScore = Math.max(existing.relevanceScore, patch.relevanceScore);
+        }
+        if (patch.niche && !existing.niche) existing.niche = patch.niche;
+        if (patch.followerCount !== undefined && patch.followerCount > existing.followerCount) {
+          existing.followerCount = patch.followerCount;
+        }
+        existing.socialLinks = mergeSocialLinks(existing.socialLinks ?? [], incomingLinks);
+        existing.updatedAt = nowIso();
+        return existing;
+      }
+      const now = nowIso();
+      const inf: Influencer = {
+        id: newId("inf"),
         handle,
         platform,
         niche: patch.niche ?? "discovered",
@@ -486,41 +661,14 @@ export async function upsertInfluencerByHandle(
         postingFrequency: patch.postingFrequency ?? 0,
         engagementTrend: patch.engagementTrend ?? "stable",
         relevanceScore: patch.relevanceScore ?? 50,
-        socialLinks: incomingLinks as unknown as object,
-      },
-    });
-    return fromInfluencer(row);
-  }
-  const list = getMock().influencers;
-  const existing = list.find((i) => i.handle === handle && i.platform === platform);
-  if (existing) {
-    if (patch.relevanceScore !== undefined) {
-      existing.relevanceScore = Math.max(existing.relevanceScore, patch.relevanceScore);
-    }
-    if (patch.niche && !existing.niche) existing.niche = patch.niche;
-    if (patch.followerCount !== undefined && patch.followerCount > existing.followerCount) {
-      existing.followerCount = patch.followerCount;
-    }
-    existing.socialLinks = mergeSocialLinks(existing.socialLinks ?? [], incomingLinks);
-    existing.updatedAt = nowIso();
-    return existing;
-  }
-  const now = nowIso();
-  const inf: Influencer = {
-    id: newId("inf"),
-    handle,
-    platform,
-    niche: patch.niche ?? "discovered",
-    followerCount: patch.followerCount ?? 0,
-    postingFrequency: patch.postingFrequency ?? 0,
-    engagementTrend: patch.engagementTrend ?? "stable",
-    relevanceScore: patch.relevanceScore ?? 50,
-    socialLinks: incomingLinks,
-    createdAt: now,
-    updatedAt: now,
-  };
-  list.push(inf);
-  return inf;
+        socialLinks: incomingLinks,
+        createdAt: now,
+        updatedAt: now,
+      };
+      list.push(inf);
+      return inf;
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -716,9 +864,20 @@ export async function dailySummary(): Promise<{
   const followedHandles = new Set(
     relationships.filter((r) => r.followed).map((r) => `${r.platform}:${r.creatorHandle}`),
   );
+  // Creators we've already commented on or replied to — don't keep resurfacing
+  // the same engagement target in "posts to comment on" day after day.
+  const engagedHandles = new Set(
+    relationships
+      .filter((r) => r.commented || r.replied)
+      .map((r) => `${r.platform}:${r.creatorHandle}`),
+  );
+  const notAlreadyEngaged = (p: Post) =>
+    !engagedHandles.has(`${p.platform}:${p.creatorHandle}`);
 
   const preferredForComment = posts.filter(
-    (p) => p.suggestedAction === "comment" || p.opportunityScore >= 70,
+    (p) =>
+      notAlreadyEngaged(p) &&
+      (p.suggestedAction === "comment" || p.opportunityScore >= 70),
   );
   const seenIds = new Set<string>();
   const topPostsToCommentOn: Post[] = [];
@@ -730,7 +889,7 @@ export async function dailySummary(): Promise<{
   }
   for (const p of posts) {
     if (topPostsToCommentOn.length >= 5) break;
-    if (seenIds.has(p.id)) continue;
+    if (seenIds.has(p.id) || !notAlreadyEngaged(p)) continue;
     seenIds.add(p.id);
     topPostsToCommentOn.push(p);
   }
@@ -754,4 +913,590 @@ export async function dailySummary(): Promise<{
     null;
 
   return { topPostsToCommentOn, influencersToFollow, conversationsToJoin, creatorToInvite };
+}
+
+// ---------------------------------------------------------------------------
+// Content Studio — ContentIdea CRUD
+// ---------------------------------------------------------------------------
+
+type PrismaContentIdea = {
+  id: string;
+  topic: string;
+  platform: string;
+  format: string;
+  hook: string;
+  hooks: string[];
+  scriptBeats: string[];
+  caption: string;
+  firstComment: string;
+  hashtags: string[];
+  audioIdea: string;
+  cta: string;
+  status: string;
+  scheduledFor: Date | null;
+  notes: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const fromContentIdea = (c: PrismaContentIdea): ContentIdea => ({
+  id: c.id,
+  topic: c.topic,
+  platform: c.platform as ContentPlatform,
+  format: c.format as ContentFormat,
+  hook: c.hook,
+  hooks: Array.isArray(c.hooks) ? c.hooks : [],
+  scriptBeats: Array.isArray(c.scriptBeats) ? c.scriptBeats : [],
+  caption: c.caption,
+  firstComment: c.firstComment,
+  hashtags: Array.isArray(c.hashtags) ? c.hashtags : [],
+  audioIdea: c.audioIdea,
+  cta: c.cta,
+  status: c.status as ContentStatus,
+  scheduledFor: c.scheduledFor ? c.scheduledFor.toISOString() : null,
+  notes: c.notes,
+  createdAt: c.createdAt.toISOString(),
+  updatedAt: c.updatedAt.toISOString(),
+});
+
+export interface ContentIdeaInput {
+  topic: string;
+  platform: ContentPlatform;
+  format: ContentFormat;
+  hook?: string;
+  hooks?: string[];
+  scriptBeats?: string[];
+  caption?: string;
+  firstComment?: string;
+  hashtags?: string[];
+  audioIdea?: string;
+  cta?: string;
+  status?: ContentStatus;
+  scheduledFor?: string | null;
+  notes?: string;
+}
+
+export async function listContentIdeas(): Promise<ContentIdea[]> {
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().contentIdea.findMany({ orderBy: { updatedAt: "desc" } });
+      return rows.map(fromContentIdea);
+    },
+    () =>
+      [...getMock().contentIdeas].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
+  );
+}
+
+export async function createContentIdea(input: ContentIdeaInput): Promise<ContentIdea> {
+  const base = {
+    topic: input.topic,
+    platform: input.platform,
+    format: input.format,
+    hook: input.hook ?? "",
+    hooks: input.hooks ?? [],
+    scriptBeats: input.scriptBeats ?? [],
+    caption: input.caption ?? "",
+    firstComment: input.firstComment ?? "",
+    hashtags: input.hashtags ?? [],
+    audioIdea: input.audioIdea ?? "",
+    cta: input.cta ?? "",
+    status: input.status ?? "idea",
+    notes: input.notes ?? "",
+  };
+  const scheduledForDate = input.scheduledFor ? new Date(input.scheduledFor) : null;
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().contentIdea.create({
+        data: { ...base, scheduledFor: scheduledForDate },
+      });
+      return fromContentIdea(row);
+    },
+    () => {
+      const idea: ContentIdea = {
+        ...base,
+        id: newId("idea"),
+        scheduledFor: input.scheduledFor ?? null,
+        createdAt: nowIso(),
+        updatedAt: nowIso(),
+      };
+      getMock().contentIdeas.unshift(idea);
+      return idea;
+    },
+  );
+}
+
+export async function updateContentIdea(
+  id: string,
+  patch: Partial<ContentIdeaInput>,
+): Promise<ContentIdea | null> {
+  return withPrismaFallback(
+    async () => {
+      try {
+        const data: Record<string, unknown> = {};
+        for (const k of [
+          "topic", "platform", "format", "hook", "hooks", "scriptBeats",
+          "caption", "firstComment", "hashtags", "audioIdea", "cta", "status", "notes",
+        ] as const) {
+          if (patch[k] !== undefined) data[k] = patch[k];
+        }
+        if (patch.scheduledFor !== undefined) {
+          data.scheduledFor = patch.scheduledFor ? new Date(patch.scheduledFor) : null;
+        }
+        const row = await prisma().contentIdea.update({ where: { id }, data });
+        return fromContentIdea(row);
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return null;
+      }
+    },
+    () => {
+      const list = getMock().contentIdeas;
+      const idx = list.findIndex((c) => c.id === id);
+      if (idx === -1) return null;
+      const prev = list[idx];
+      list[idx] = {
+        ...prev,
+        ...patch,
+        scheduledFor: patch.scheduledFor !== undefined ? patch.scheduledFor : prev.scheduledFor,
+        id,
+        createdAt: prev.createdAt,
+        updatedAt: nowIso(),
+      };
+      return list[idx];
+    },
+  );
+}
+
+export async function deleteContentIdea(id: string): Promise<boolean> {
+  return withPrismaFallback(
+    async () => {
+      try {
+        await prisma().contentIdea.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return false;
+      }
+    },
+    () => {
+      const before = getMock().contentIdeas.length;
+      getMock().contentIdeas = getMock().contentIdeas.filter((c) => c.id !== id);
+      return getMock().contentIdeas.length < before;
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trend Radar — Trend CRUD
+// ---------------------------------------------------------------------------
+
+type PrismaTrend = {
+  id: string;
+  platform: string;
+  type: string;
+  title: string;
+  description: string;
+  momentum: string;
+  exampleUrl: string | null;
+  createdAt: Date;
+};
+
+const fromTrend = (t: PrismaTrend): Trend => ({
+  id: t.id,
+  platform: t.platform as ContentPlatform,
+  type: t.type as TrendType,
+  title: t.title,
+  description: t.description,
+  momentum: t.momentum as TrendMomentum,
+  exampleUrl: t.exampleUrl ?? null,
+  createdAt: t.createdAt.toISOString(),
+});
+
+export async function listTrends(): Promise<Trend[]> {
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().trend.findMany({ orderBy: { createdAt: "desc" } });
+      return rows.map(fromTrend);
+    },
+    () =>
+      [...getMock().trends].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      ),
+  );
+}
+
+export async function createTrend(input: {
+  platform: ContentPlatform;
+  type: TrendType;
+  title: string;
+  description?: string;
+  momentum?: TrendMomentum;
+  exampleUrl?: string | null;
+}): Promise<Trend> {
+  const base = {
+    platform: input.platform,
+    type: input.type,
+    title: input.title,
+    description: input.description ?? "",
+    momentum: input.momentum ?? "rising",
+    exampleUrl: input.exampleUrl ?? null,
+  };
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().trend.create({ data: base });
+      return fromTrend(row);
+    },
+    () => {
+      const trend: Trend = { ...base, id: newId("trend"), createdAt: nowIso() };
+      getMock().trends.unshift(trend);
+      return trend;
+    },
+  );
+}
+
+export async function deleteTrend(id: string): Promise<boolean> {
+  return withPrismaFallback(
+    async () => {
+      try {
+        await prisma().trend.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return false;
+      }
+    },
+    () => {
+      const before = getMock().trends.length;
+      getMock().trends = getMock().trends.filter((t) => t.id !== id);
+      return getMock().trends.length < before;
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// My Growth — accounts, follower snapshots, post analytics
+// ---------------------------------------------------------------------------
+
+type PrismaAccount = {
+  id: string;
+  platform: string;
+  handle: string;
+  displayName: string;
+  followers: number;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+const fromAccount = (a: PrismaAccount): MyAccount => ({
+  id: a.id,
+  platform: a.platform as ContentPlatform,
+  handle: a.handle,
+  displayName: a.displayName,
+  followers: a.followers,
+  createdAt: a.createdAt.toISOString(),
+  updatedAt: a.updatedAt.toISOString(),
+});
+
+type PrismaSnapshot = {
+  id: string;
+  accountId: string;
+  date: Date;
+  followers: number;
+  reach: number;
+  profileViews: number;
+  createdAt: Date;
+};
+
+const fromSnapshot = (s: PrismaSnapshot): FollowerSnapshot => ({
+  id: s.id,
+  accountId: s.accountId,
+  date: s.date.toISOString(),
+  followers: s.followers,
+  reach: s.reach,
+  profileViews: s.profileViews,
+  createdAt: s.createdAt.toISOString(),
+});
+
+type PrismaMyPost = {
+  id: string;
+  accountId: string;
+  platform: string;
+  title: string;
+  format: string;
+  postedAt: Date;
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+  saves: number;
+  follows: number;
+  createdAt: Date;
+};
+
+const fromMyPost = (p: PrismaMyPost): MyPost => ({
+  id: p.id,
+  accountId: p.accountId,
+  platform: p.platform as ContentPlatform,
+  title: p.title,
+  format: p.format as ContentFormat,
+  postedAt: p.postedAt.toISOString(),
+  reach: p.reach,
+  likes: p.likes,
+  comments: p.comments,
+  shares: p.shares,
+  saves: p.saves,
+  follows: p.follows,
+  createdAt: p.createdAt.toISOString(),
+});
+
+export async function listAccounts(): Promise<MyAccount[]> {
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().myAccount.findMany({ orderBy: { followers: "desc" } });
+      return rows.map(fromAccount);
+    },
+    () => [...getMock().accounts].sort((a, b) => b.followers - a.followers),
+  );
+}
+
+export async function getAccount(id: string): Promise<MyAccount | null> {
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().myAccount.findUnique({ where: { id } });
+      return row ? fromAccount(row) : null;
+    },
+    () => getMock().accounts.find((a) => a.id === id) ?? null,
+  );
+}
+
+export async function createAccount(input: {
+  platform: ContentPlatform;
+  handle: string;
+  displayName?: string;
+  followers?: number;
+}): Promise<MyAccount> {
+  const base = {
+    platform: input.platform,
+    handle: input.handle.replace(/^@/, ""),
+    displayName: input.displayName ?? "",
+    followers: input.followers ?? 0,
+  };
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().myAccount.upsert({
+        where: { handle_platform: { handle: base.handle, platform: base.platform } },
+        update: { displayName: base.displayName, followers: base.followers },
+        create: base,
+      });
+      return fromAccount(row);
+    },
+    () => {
+      const existing = getMock().accounts.find(
+        (a) => a.handle === base.handle && a.platform === base.platform,
+      );
+      if (existing) {
+        existing.displayName = base.displayName || existing.displayName;
+        existing.followers = base.followers || existing.followers;
+        existing.updatedAt = nowIso();
+        return existing;
+      }
+      const acct: MyAccount = { ...base, id: newId("acct"), createdAt: nowIso(), updatedAt: nowIso() };
+      getMock().accounts.push(acct);
+      return acct;
+    },
+  );
+}
+
+export async function updateAccount(
+  id: string,
+  patch: { displayName?: string; followers?: number },
+): Promise<MyAccount | null> {
+  return withPrismaFallback(
+    async () => {
+      try {
+        const data: Record<string, unknown> = {};
+        if (patch.displayName !== undefined) data.displayName = patch.displayName;
+        if (patch.followers !== undefined) data.followers = patch.followers;
+        const row = await prisma().myAccount.update({ where: { id }, data });
+        return fromAccount(row);
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return null;
+      }
+    },
+    () => {
+      const a = getMock().accounts.find((x) => x.id === id);
+      if (!a) return null;
+      if (patch.displayName !== undefined) a.displayName = patch.displayName;
+      if (patch.followers !== undefined) a.followers = patch.followers;
+      a.updatedAt = nowIso();
+      return a;
+    },
+  );
+}
+
+export async function deleteAccount(id: string): Promise<boolean> {
+  return withPrismaFallback(
+    async () => {
+      try {
+        await prisma().myAccount.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return false;
+      }
+    },
+    () => {
+      const before = getMock().accounts.length;
+      getMock().accounts = getMock().accounts.filter((a) => a.id !== id);
+      getMock().snapshots = getMock().snapshots.filter((s) => s.accountId !== id);
+      getMock().myPosts = getMock().myPosts.filter((p) => p.accountId !== id);
+      return getMock().accounts.length < before;
+    },
+  );
+}
+
+export async function listSnapshots(accountId?: string): Promise<FollowerSnapshot[]> {
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().followerSnapshot.findMany({
+        where: accountId ? { accountId } : undefined,
+        orderBy: { date: "asc" },
+      });
+      return rows.map(fromSnapshot);
+    },
+    () =>
+      getMock()
+        .snapshots.filter((s) => !accountId || s.accountId === accountId)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()),
+  );
+}
+
+export async function createSnapshot(input: {
+  accountId: string;
+  date?: string;
+  followers: number;
+  reach?: number;
+  profileViews?: number;
+}): Promise<FollowerSnapshot> {
+  const dateIso = input.date ?? nowIso();
+  const base = {
+    accountId: input.accountId,
+    followers: input.followers,
+    reach: input.reach ?? 0,
+    profileViews: input.profileViews ?? 0,
+  };
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().followerSnapshot.create({
+        data: { ...base, date: new Date(dateIso) },
+      });
+      // Keep the parent account's headline follower count in sync.
+      await prisma().myAccount.update({
+        where: { id: input.accountId },
+        data: { followers: input.followers },
+      }).catch(() => {});
+      return fromSnapshot(row);
+    },
+    () => {
+      const snap: FollowerSnapshot = {
+        ...base,
+        id: newId("snap"),
+        date: dateIso,
+        createdAt: nowIso(),
+      };
+      getMock().snapshots.push(snap);
+      const acct = getMock().accounts.find((a) => a.id === input.accountId);
+      if (acct) {
+        acct.followers = input.followers;
+        acct.updatedAt = nowIso();
+      }
+      return snap;
+    },
+  );
+}
+
+export async function listMyPosts(accountId?: string): Promise<MyPost[]> {
+  return withPrismaFallback(
+    async () => {
+      const rows = await prisma().myPost.findMany({
+        where: accountId ? { accountId } : undefined,
+        orderBy: { postedAt: "desc" },
+      });
+      return rows.map(fromMyPost);
+    },
+    () =>
+      getMock()
+        .myPosts.filter((p) => !accountId || p.accountId === accountId)
+        .sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()),
+  );
+}
+
+export interface MyPostInput {
+  accountId: string;
+  platform: ContentPlatform;
+  title: string;
+  format?: ContentFormat;
+  postedAt?: string;
+  reach?: number;
+  likes?: number;
+  comments?: number;
+  shares?: number;
+  saves?: number;
+  follows?: number;
+}
+
+export async function createMyPost(input: MyPostInput): Promise<MyPost> {
+  const postedAtIso = input.postedAt ?? nowIso();
+  const base = {
+    accountId: input.accountId,
+    platform: input.platform,
+    title: input.title,
+    format: input.format ?? "reel",
+    reach: input.reach ?? 0,
+    likes: input.likes ?? 0,
+    comments: input.comments ?? 0,
+    shares: input.shares ?? 0,
+    saves: input.saves ?? 0,
+    follows: input.follows ?? 0,
+  };
+  return withPrismaFallback(
+    async () => {
+      const row = await prisma().myPost.create({
+        data: { ...base, postedAt: new Date(postedAtIso) },
+      });
+      return fromMyPost(row);
+    },
+    () => {
+      const post: MyPost = {
+        ...base,
+        id: newId("mypost"),
+        postedAt: postedAtIso,
+        createdAt: nowIso(),
+      };
+      getMock().myPosts.unshift(post);
+      return post;
+    },
+  );
+}
+
+export async function deleteMyPost(id: string): Promise<boolean> {
+  return withPrismaFallback(
+    async () => {
+      try {
+        await prisma().myPost.delete({ where: { id } });
+        return true;
+      } catch (e) {
+        if (isPrismaUnavailableError(e)) throw e;
+        return false;
+      }
+    },
+    () => {
+      const before = getMock().myPosts.length;
+      getMock().myPosts = getMock().myPosts.filter((p) => p.id !== id);
+      return getMock().myPosts.length < before;
+    },
+  );
 }

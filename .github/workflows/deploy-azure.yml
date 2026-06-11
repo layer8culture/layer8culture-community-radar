@@ -1,0 +1,100 @@
+name: Deploy to Azure App Service
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+env:
+  AZURE_WEBAPP_NAME: app-community-radar-ff1d31
+  NODE_VERSION: "22"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies (full)
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Azure login (OIDC) — early, so we can read app settings before build
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Fetch DATABASE_URL from App Service (so static prerender hits the real DB)
+        # Several pages prerender as static HTML at build time. The layout reads
+        # `usingMock = !process.env.DATABASE_URL`, so without DATABASE_URL during
+        # build the "Running on in-memory mock data" banner gets baked into the
+        # static HTML. Pull the live value from App Service app settings and
+        # expose it just to the build step below.
+        id: db
+        run: |
+          DB_URL=$(az webapp config appsettings list \
+            --name "$AZURE_WEBAPP_NAME" \
+            --resource-group rg-community-radar \
+            --query "[?name=='DATABASE_URL'].value | [0]" -o tsv)
+          if [ -z "$DB_URL" ]; then
+            echo "::error::DATABASE_URL is not set on $AZURE_WEBAPP_NAME"
+            exit 1
+          fi
+          # Mask it in logs, then export to subsequent steps.
+          echo "::add-mask::$DB_URL"
+          echo "DATABASE_URL=$DB_URL" >> "$GITHUB_ENV"
+
+      - name: Build Next.js (standalone output)
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npm run build
+
+      - name: Assemble deploy directory
+        # next.config.mjs sets output: 'standalone'. The standalone bundle has a
+        # minimal node_modules — we just need to layer on public + .next/static + prisma.
+        run: |
+          mkdir -p deploy
+          cp -a .next/standalone/. deploy/
+          if [ -d public ]; then cp -a public deploy/; fi
+          mkdir -p deploy/.next
+          cp -a .next/static deploy/.next/static
+          cp -a prisma deploy/
+          # The standalone bundle ships its own .env (built from process.env at build
+          # time) — App Service supplies real values via app settings, so drop it.
+          rm -f deploy/.env
+
+      - name: Zip deployment artifact
+        run: |
+          cd deploy && zip -qr ../app.zip .
+          ls -lh ../app.zip
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: app.zip
+
+      - name: Azure logout
+        if: always()
+        run: az logout
+

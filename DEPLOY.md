@@ -69,6 +69,8 @@ Paste these in the import screen **before** clicking Deploy. Set scope to **Prod
 | `REDDIT_CLIENT_SECRET` | OAuth client secret | optional | Skip → uses RSS fallback |
 | `CRON_SECRET` | `openssl rand -hex 32` | ✅ | Authorizes the scheduled `/api/refresh` call. Vercel automatically attaches `Authorization: Bearer ${CRON_SECRET}` to cron requests when this env var is named exactly `CRON_SECRET`. |
 
+> **TikTok ingestion is not available on Vercel.** It uses headless Chromium (~300MB once the browser is installed), which exceeds Vercel's serverless function size limit. Leave `TIKTOK_SCRAPER_ENABLED` unset — tiktok hashtags will appear in the refresh report as `skipped` with a clear reason, and the rest of ingestion runs normally. If you need TikTok, run the refresh job on Azure App Service instead (see `DEPLOY-AZURE.md`).
+
 ---
 
 ## 4. Deploy

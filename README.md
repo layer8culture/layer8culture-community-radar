@@ -8,11 +8,19 @@ A signal-tracking and authentic-engagement dashboard for tech / creator-economy 
 
 ## Features
 
-- **Daily Action Dashboard** — top 5 posts to comment on, 3 influencers to follow, 2 conversations to join, 1 creator to invite.
+### Grow your own audience (Instagram + TikTok)
+
+- **Content Studio** — the core growth engine. Turn one topic into a ready-to-shoot Reel/TikTok: 3 hook variations, a beat-by-beat script, a save/share-optimized caption, a pinned first comment, a tuned hashtag set, an audio/trend direction, and a follow-driving CTA. Save drafts, manage status (idea → drafting → scheduled → posted), and one-click **repurpose** a plan for the other platform. Uses the same AI providers as the comment generator (GitHub Models → OpenAI → deterministic fallback).
+- **Trend Radar** — track trending sounds, formats, hashtags, and topics per platform with a momentum badge. "Use in Studio" deep-links any trend straight into the Content Studio.
+- **My Growth** — your own accounts, follower-history sparkline with period-over-period delta, and a per-post analytics table with derived metrics that actually predict growth: engagement rate, **save rate**, **share rate**, and **follower-conversion** (follows ÷ reach). Includes a first-60-minute **engagement-window** prompt for posts you just published.
+
+### Engage with other creators (networking CRM)
+
+- **Daily Action Dashboard** — top 5 posts to comment on (now excludes creators you've already commented on/replied to), 3 influencers to follow, 2 conversations to join, 1 creator to invite.
 - **Opportunity Feed** — posts ranked by `opportunityScore = relevance·0.4 + velocity·0.3 + freshness·0.3`, filterable by platform and minimum score.
 - **Influencer Tracker** — full CRUD, sortable/filterable table, detail page per influencer.
-- **Hashtag Tracker** — seeded with the Layer8Culture defaults; add/remove tags per platform.
-- **Real-data ingestion** — `POST /api/refresh` (or the **↻ Refresh now** button on the Opportunity Feed) pulls live posts from **YouTube** and **Reddit** for each tracked hashtag, scores them, and auto-creates Influencer records for new creators discovered.
+- **Hashtag Tracker** — seeded with platform-aware Layer8Culture defaults (Instagram, TikTok, Reddit, YouTube); add/remove tags per platform.
+- **Real-data ingestion** — `POST /api/refresh` (or the **↻ Refresh now** button on the Opportunity Feed) pulls live posts from **YouTube**, **Reddit**, **TikTok** (opt-in), and **Instagram** (opt-in) for each tracked hashtag, scores them, and auto-creates Influencer records for new creators discovered.
 - **Suggested Comment Generator** — `POST /api/generate-comment` returns 4 tonal variations (insightful · encouraging · builder-to-builder · community-oriented). Provider is auto-selected: **GitHub Models** if `GITHUB_TOKEN` is set, **OpenAI** if `OPENAI_API_KEY` is set, otherwise deterministic fallback templates so the UI always works.
 - **Relationship Tracker** — track liked / commented / followed / replied / invited per creator, plus collaborator score and notes.
 
@@ -157,19 +165,11 @@ CommunityRadar/
 
 ---
 
-## Deploying to Vercel
+## Deploying
 
-See [`DEPLOY.md`](./DEPLOY.md) for the full step-by-step checklist (root directory, env vars, cron verification, custom domain, branch selection, day-2 ops). Quick version:
+Production runs on **Azure App Service** (Linux, Node 22) backed by **Azure Database for PostgreSQL Flexible Server**, with a **Logic App** as the 6-hourly cron. End-to-end runbook: [`DEPLOY-AZURE.md`](./DEPLOY-AZURE.md). CI/CD is wired through [`.github/workflows/deploy-azure.yml`](./.github/workflows/deploy-azure.yml) using a GitHub OIDC federated credential — pushes to `main` deploy automatically.
 
-1. Push the `CommunityRadar/` directory to GitHub.
-2. Import the project in Vercel and set the **root directory** to `CommunityRadar`. The included `vercel.json` already pins the build command to `npm run db:generate && npm run build` and registers a 6-hourly cron hitting `POST /api/refresh`.
-3. Use Supabase's **Transaction pooler** URL (port `6543`) for `DATABASE_URL` in Vercel, with `?pgbouncer=true&connection_limit=1` appended — required for serverless.
-4. Add env vars in Project → Settings → Environment Variables:
-   - `DATABASE_URL` (transaction pooler)
-   - `GITHUB_TOKEN` (recommended) or `OPENAI_API_KEY`
-   - `YOUTUBE_API_KEY`, `REDDIT_USER_AGENT`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` for ingestion
-   - `CRON_SECRET` — random string; required to authorize the scheduled `/api/refresh` calls
-5. Deploy.
+The original Vercel + Supabase setup is still documented in [`DEPLOY.md`](./DEPLOY.md) for reference / rollback. Pick whichever target you want; both work, but production is now Azure.
 
 ---
 
@@ -177,8 +177,12 @@ See [`DEPLOY.md`](./DEPLOY.md) for the full step-by-step checklist (root directo
 
 - "Layer8Culture themes" tagging system on posts.
 - "Mark complete" toggle on Daily Actions.
-- Engagement-actions-per-day analytics.
-- Twitter/X, Instagram, TikTok ingestion (paid / approval-gated APIs).
+- Auto-import follower/post analytics from the Instagram & TikTok APIs into **My Growth** (today they're entered manually).
+- Twitter/X ingestion (paid / approval-gated API).
+
+> **TikTok note:** TikTok ingestion ships behind the `TIKTOK_SCRAPER_ENABLED` flag and uses headless Chromium (`playwright-core`). It's free but only runs on hosts that can carry a ~300MB browser binary — Azure App Service B2+ or a containerised runtime. Vercel deploys should leave the flag unset. See `.env.example` and `DEPLOY-AZURE.md`. Expect the fetcher to need updating every few months as TikTok rotates its internal XHRs.
+
+> **Instagram note:** Instagram ingestion uses the official **Graph API hashtag search** and is gated behind `INSTAGRAM_ACCESS_TOKEN` + `INSTAGRAM_USER_ID` (a Business/Creator account linked to a Facebook Page). Limits: 30 unique hashtags per account per rolling 7 days, and hashtag media doesn't expose the owner's username (a handle is derived from an @mention in the caption when present). Without the vars set, Instagram hashtags are skipped with a clear reason. See `.env.example`.
 
 ---
 
@@ -186,7 +190,10 @@ See [`DEPLOY.md`](./DEPLOY.md) for the full step-by-step checklist (root directo
 
 - **Dark theme tokens** live in `tailwind.config.ts` (`bg`, `accent`, `text`). Background `#0b0b0c`, accent electric blue `#1e90ff`.
 - **State management** is intentionally simple (`useState`/`useEffect`). No Redux, no Zustand.
-- **Server vs client** — pages that need fresh data on every load (Dashboard) are server components calling the store directly. Interactive pages (Opportunities, Influencers, Hashtags, Relationships) are client components that hit the API routes.
+- **Server vs client** — pages that need fresh data on every load (Dashboard) are server components calling the store directly. Interactive pages (Opportunities, Influencers, Hashtags, Relationships, Content Studio, Trend Radar, My Growth) are client components that hit the API routes.
+- **Two product surfaces** — the **growth** features (Content Studio, Trend Radar, My Growth) optimize your *own* short-form content, which is what actually drives organic IG/TikTok follower growth. The **networking** features (Opportunity Feed, Influencers, Hashtags, Networking) help you build relationships with other creators.
+
+> **Note for a connected database:** the growth features add new tables (`ContentIdea`, `Trend`, `MyAccount`, `FollowerSnapshot`, `MyPost`). After pulling these changes, run `npm run db:push` (or a migration) so the Postgres backend has them. The zero-config in-memory mock store already includes them.
 # layer8culture-community-radar
 # layer8culture-community-radar
 # layer8culture-community-radar

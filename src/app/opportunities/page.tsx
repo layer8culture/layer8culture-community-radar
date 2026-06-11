@@ -103,13 +103,13 @@ export default function OpportunityFeedPage() {
         </div>
       )}
 
-      <div className="card p-3 mb-6 flex flex-wrap items-center gap-3">
-        <label className="text-xs text-text-secondary">
+      <div className="card p-3 mb-6 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+        <label className="text-xs text-text-secondary flex items-center gap-2 shrink-0">
           Platform
           <select
             value={platform}
             onChange={(e) => setPlatform(e.target.value)}
-            className="input ml-2 inline-block w-auto py-1"
+            className="input w-auto py-1"
           >
             <option value="all">All</option>
             {Platforms.map((p) => (
@@ -117,18 +117,19 @@ export default function OpportunityFeedPage() {
             ))}
           </select>
         </label>
-        <label className="text-xs text-text-secondary flex items-center gap-2">
-          Min score: <span className="font-mono text-text-primary">{minScore}</span>
+        <label className="text-xs text-text-secondary flex flex-1 items-center gap-2 min-w-[200px]">
+          <span className="shrink-0">Min score:</span>
+          <span className="font-mono text-text-primary w-6 text-right shrink-0">{minScore}</span>
           <input
             type="range"
             min={0}
             max={100}
             value={minScore}
             onChange={(e) => setMinScore(Number(e.target.value))}
-            className="accent-accent-bright"
+            className="accent-accent-bright flex-1"
           />
         </label>
-        <div className="ml-auto text-xs text-text-muted">
+        <div className="sm:ml-auto text-xs text-text-muted">
           {filtered ? `${filtered.length} posts` : ""}
         </div>
       </div>

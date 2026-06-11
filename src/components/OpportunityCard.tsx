@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Post, SuggestedAction } from "@/lib/types";
 import type { CommentSource, CommentSuggestion } from "@/lib/openai";
 import { ActionBadge, PlatformBadge, ScoreBar } from "./ui/Primitives";
+import { SocialLinks } from "./SocialLinks";
 
 // Maps the post's suggestedAction to the Relationship boolean field it sets.
 const ACTION_TO_FIELD: Record<SuggestedAction, keyof RelationshipBooleans> = {
@@ -109,8 +110,8 @@ export function OpportunityCard({ post }: { post: Post }) {
     <article
       className={`card p-5 hover:border-accent-bright/40 transition-colors${actioned ? " border-green-500/40" : ""}`}
     >
-      <header className="flex items-center justify-between mb-3 gap-3">
-        <div className="flex items-center gap-2 min-w-0">
+      <header className="flex flex-wrap items-center justify-between mb-3 gap-3">
+        <div className="flex items-center gap-2 min-w-0 flex-1">
           <div className="w-8 h-8 rounded-full bg-bg-elevated border border-bg-border flex items-center justify-center text-xs font-mono text-accent-glow shrink-0">
             {post.creatorHandle.slice(0, 2).toUpperCase()}
           </div>
@@ -119,9 +120,18 @@ export function OpportunityCard({ post }: { post: Post }) {
             <div className="text-[11px] text-text-muted">
               {new Date(post.createdAt).toLocaleString()}
             </div>
+            {post.creatorSocialLinks && post.creatorSocialLinks.length > 0 && (
+              <div className="mt-1.5">
+                <SocialLinks
+                  links={post.creatorSocialLinks}
+                  variant="compact"
+                  emptyText=""
+                />
+              </div>
+            )}
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
           {actioned && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] uppercase tracking-wider bg-green-500/15 border border-green-500/40 text-green-400 font-medium">
               ✓ {ACTION_LABELS[actioned.action]}
@@ -154,11 +164,11 @@ export function OpportunityCard({ post }: { post: Post }) {
       </div>
 
       {/* Bottom action row */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           onClick={generate}
           disabled={loading}
-          className="btn-primary text-xs"
+          className="btn-primary text-xs flex-1 sm:flex-none min-w-[160px]"
         >
           {loading ? "Generating…" : comments ? "Regenerate comments" : "✨ Suggest comments"}
         </button>
@@ -168,7 +178,7 @@ export function OpportunityCard({ post }: { post: Post }) {
             setActionOpen((v) => !v);
             setSaveError(null);
           }}
-          className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${
+          className={`text-xs px-3 py-2 rounded-md border transition-colors min-h-[40px] flex-1 sm:flex-none ${
             actioned
               ? "border-green-500/40 text-green-400 hover:bg-green-500/10"
               : "border-bg-border text-text-secondary hover:border-accent-glow/50 hover:text-accent-glow"

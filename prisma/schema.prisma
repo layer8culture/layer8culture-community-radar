@@ -33,6 +33,26 @@ enum SuggestedAction {
   invite
 }
 
+enum ContentStatus {
+  idea
+  drafting
+  scheduled
+  posted
+}
+
+enum TrendType {
+  sound
+  format
+  hashtag
+  topic
+}
+
+enum TrendMomentum {
+  rising
+  peaking
+  fading
+}
+
 model Influencer {
   id                String          @id @default(cuid())
   handle            String
@@ -93,4 +113,82 @@ model Relationship {
   updatedAt         DateTime     @updatedAt
 
   @@unique([creatorHandle, platform])
+}
+
+// --- Organic-growth models (Instagram + TikTok) ---
+// Content/Trends/MyAccount reuse the shared Platform enum but are validated to
+// instagram | tiktok at the application layer.
+
+model ContentIdea {
+  id           String        @id @default(cuid())
+  topic        String
+  platform     Platform
+  format       String        @default("reel")
+  hook         String        @default("")
+  hooks        String[]      @default([])
+  scriptBeats  String[]      @default([])
+  caption      String        @default("")
+  firstComment String        @default("")
+  hashtags     String[]      @default([])
+  audioIdea    String        @default("")
+  cta          String        @default("")
+  status       ContentStatus @default(idea)
+  scheduledFor DateTime?
+  notes        String        @default("")
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Trend {
+  id          String        @id @default(cuid())
+  platform    Platform
+  type        TrendType
+  title       String
+  description String        @default("")
+  momentum    TrendMomentum @default(rising)
+  exampleUrl  String?
+  createdAt   DateTime      @default(now())
+}
+
+model MyAccount {
+  id          String             @id @default(cuid())
+  platform    Platform
+  handle      String
+  displayName String             @default("")
+  followers   Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  snapshots   FollowerSnapshot[]
+  posts       MyPost[]
+
+  @@unique([handle, platform])
+}
+
+model FollowerSnapshot {
+  id           String    @id @default(cuid())
+  accountId    String
+  account      MyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  date         DateTime
+  followers    Int       @default(0)
+  reach        Int       @default(0)
+  profileViews Int       @default(0)
+  createdAt    DateTime  @default(now())
+}
+
+model MyPost {
+  id        String    @id @default(cuid())
+  accountId String
+  account   MyAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  platform  Platform
+  title     String
+  format    String    @default("reel")
+  postedAt  DateTime
+  reach     Int       @default(0)
+  likes     Int       @default(0)
+  comments  Int       @default(0)
+  shares    Int       @default(0)
+  saves     Int       @default(0)
+  follows   Int       @default(0)
+  createdAt DateTime  @default(now())
 }

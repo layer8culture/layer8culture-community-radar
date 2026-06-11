@@ -206,6 +206,35 @@ export function classifyUrls(urls: Array<string | null | undefined>): SocialLink
   return Array.from(out.values());
 }
 
+// Build a canonical creator profile URL from a (platform, handle) pair. Used
+// to surface a profile link (e.g. Instagram) on the opportunity feed when
+// the harvested social-link data doesn't already include one for the post's
+// own platform. Returns null if the handle doesn't look usable for that
+// platform's URL scheme (e.g. contains spaces).
+export function profileUrlFor(platform: string, handle: string): string | null {
+  const h = (handle ?? "").trim().replace(/^@+/, "");
+  if (!h) return null;
+  switch (platform) {
+    case "twitter":
+      // X/Twitter handles: 1–15 chars, letters/numbers/underscore.
+      return /^[A-Za-z0-9_]{1,15}$/.test(h) ? `https://x.com/${h}` : null;
+    case "instagram":
+      // Instagram handles: up to 30 chars, letters/numbers/dot/underscore.
+      return /^[A-Za-z0-9_.]{1,30}$/.test(h) ? `https://instagram.com/${h}` : null;
+    case "tiktok":
+      // TikTok handles: letters/numbers/dot/underscore, prefixed with @.
+      return /^[A-Za-z0-9_.]{1,24}$/.test(h) ? `https://www.tiktok.com/@${h}` : null;
+    case "youtube":
+      // YouTube custom handles: letters/numbers/dash/underscore/dot. Channel
+      // titles with spaces aren't valid handles, so we bail in that case.
+      return /^[A-Za-z0-9_.\-]{3,30}$/.test(h) ? `https://www.youtube.com/@${h}` : null;
+    case "reddit":
+      return /^[A-Za-z0-9_\-]{3,20}$/.test(h) ? `https://www.reddit.com/user/${h}` : null;
+    default:
+      return null;
+  }
+}
+
 // Display-friendly icon labels for known platforms.
 export const PLATFORM_LABELS: Record<string, string> = {
   twitter: "X",

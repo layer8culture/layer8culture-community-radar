@@ -131,9 +131,9 @@ The tags that feed your Opportunity feed. Comes pre-seeded with Layer8Culture de
 
 **Tip:** more isn't better. 8–15 well-chosen tags per platform > 50 noisy ones. Prune monthly.
 
-### Real data ingestion (YouTube + Reddit)
+### Real data ingestion (YouTube + Reddit + TikTok)
 
-Hashtags on **YouTube** and **Reddit** can pull real posts into your feed. Click **↻ Refresh now** on the Opportunity Feed page to trigger a fetch (or hit `POST /api/refresh` from a cron).
+Hashtags on **YouTube**, **Reddit**, and (opt-in) **TikTok** can pull real posts into your feed. Click **↻ Refresh now** on the Opportunity Feed page to trigger a fetch (or hit `POST /api/refresh` from a cron).
 
 **YouTube tags** — type any search query (e.g. `vibe coding`, `indie hacker daily`). It searches recent uploads matching that phrase.
 
@@ -141,18 +141,30 @@ Hashtags on **YouTube** and **Reddit** can pull real posts into your feed. Click
 - `r/webdev` (with the `r/` prefix) → pulls newest posts from that subreddit.
 - Anything else (e.g. `livestreaming setup`) → searches Reddit-wide for posts matching that query in the last week.
 
+**TikTok tags** — two formats:
+- A plain hashtag (e.g. `vibecoding`) → pulls the most recent videos from `tiktok.com/tag/vibecoding`.
+- `@handle` (e.g. `@layer8culture`) → pulls that user's recent videos.
+
 For each fetched post, Community Radar:
 1. Computes engagement velocity from likes/comments/upvotes vs. age.
 2. Inherits relevance from the source hashtag's relevance score.
-3. Auto-creates an Influencer record for the creator (so they show up in the Influencers tab).
+3. Auto-creates an Influencer record for the creator (so they show up in the Influencers tab) and surfaces their other socials as chips on the Opportunity card.
 4. Replaces all existing posts for that platform (other platforms are untouched).
 
 **Required env vars** (in `.env.local`):
 - `YOUTUBE_API_KEY` — free from https://console.cloud.google.com → Enable "YouTube Data API v3" → Credentials → API key.
 - `REDDIT_USER_AGENT` — required. A unique descriptive UA, e.g. `"community-radar/0.1 (by /u/yourname)"`. With only this set, the app uses Reddit's public **RSS** endpoints — works from any IP (including Vercel) with no API approval needed. Trade-off: no upvote/comment counts, so opportunity scores lean on freshness + relevance.
 - `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` — *optional* upgrade. Once your Reddit API application at https://www.reddit.com/prefs/apps is approved, paste these to switch ingestion to authenticated OAuth and unlock real upvote/comment data.
+- `TIKTOK_SCRAPER_ENABLED=true` — **opt-in**, off by default. Turns on the Playwright + headless Chromium scraper for TikTok hashtags. After enabling, install the browser once on the host:
+  ```
+  npm run setup:tiktok
+  ```
+  Trade-offs to know:
+  - **Won't run on Vercel** (Chromium is ~300MB; exceeds the serverless bundle limit). Use Azure App Service B2+ or a containerised runtime — see `DEPLOY-AZURE.md`.
+  - **Against TikTok's ToS** — same call you make with the Reddit RSS fallback. Your discretion.
+  - **Breaks every few months** when TikTok rotates its internal XHR shape. When it does, only `src/lib/ingestTikTok.ts` needs updating.
 
-If YouTube creds are missing, those hashtags are silently skipped — the rest still work.
+If any platform's creds/flags are missing, those hashtags appear in the refresh report under `skipped` with a clear reason — the rest still work.
 
 ---
 

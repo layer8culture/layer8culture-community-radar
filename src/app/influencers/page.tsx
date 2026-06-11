@@ -83,25 +83,25 @@ export default function InfluencersPage() {
         </div>
       )}
 
-      <div className="card p-3 mb-4 flex flex-wrap items-center gap-3">
+      <div className="card p-3 mb-4 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
         <input
           type="text"
           placeholder="Search handle or niche…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="input max-w-xs"
+          className="input sm:max-w-xs"
         />
         <select
           value={platform}
           onChange={(e) => setPlatform(e.target.value)}
-          className="input w-auto"
+          className="input sm:w-auto"
         >
           <option value="all">All platforms</option>
           {Platforms.map((p) => (
             <option key={p} value={p}>{p}</option>
           ))}
         </select>
-        <div className="ml-auto text-xs text-text-muted">{filtered ? `${filtered.length} influencers` : ""}</div>
+        <div className="sm:ml-auto text-xs text-text-muted">{filtered ? `${filtered.length} influencers` : ""}</div>
       </div>
 
       {error && <div className="card p-4 text-red-300 text-sm border-red-500/30 mb-4">{error}</div>}
@@ -113,49 +113,87 @@ export default function InfluencersPage() {
       {filtered && filtered.length === 0 && <EmptyState message="No influencers yet. Add one above." />}
 
       {filtered && filtered.length > 0 && (
-        <div className="card overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="text-[11px] uppercase tracking-wider text-text-muted bg-bg-elevated/50">
-              <tr>
-                <Th label="Handle" onClick={() => toggleSort("handle")} active={sortKey === "handle"} dir={sortDir} />
-                <th className="px-4 py-3 text-left">Platform</th>
-                <th className="px-4 py-3 text-left">Niche</th>
-                <Th label="Followers" onClick={() => toggleSort("followerCount")} active={sortKey === "followerCount"} dir={sortDir} />
-                <Th label="Posts/wk" onClick={() => toggleSort("postingFrequency")} active={sortKey === "postingFrequency"} dir={sortDir} />
-                <th className="px-4 py-3 text-left">Trend</th>
-                <Th label="Relevance" onClick={() => toggleSort("relevanceScore")} active={sortKey === "relevanceScore"} dir={sortDir} />
-                <th className="px-4 py-3 text-left">Links</th>
-                <th className="px-4 py-3" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-bg-border">
-              {filtered.map((i) => (
-                <tr key={i.id} className="hover:bg-bg-elevated/30 transition-colors">
-                  <td className="px-4 py-3 font-medium">@{i.handle}</td>
-                  <td className="px-4 py-3"><PlatformBadge platform={i.platform} /></td>
-                  <td className="px-4 py-3 text-text-secondary">{i.niche}</td>
-                  <td className="px-4 py-3 font-mono">{i.followerCount.toLocaleString()}</td>
-                  <td className="px-4 py-3 font-mono">{i.postingFrequency}</td>
-                  <td className="px-4 py-3"><TrendBadge trend={i.engagementTrend} /></td>
-                  <td className="px-4 py-3 w-40">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs w-7">{i.relevanceScore}</span>
-                      <ScoreBar score={i.relevanceScore} />
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 max-w-[260px]">
-                    <SocialLinks links={i.socialLinks ?? []} variant="compact" emptyText="—" />
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link href={`/influencers/${i.id}`} className="text-accent-glow hover:text-accent-bright text-xs">
-                      Open →
-                    </Link>
-                  </td>
+        <>
+          {/* Mobile: card list (no horizontal scrolling required). */}
+          <div className="md:hidden space-y-3">
+            {filtered.map((i) => (
+              <Link
+                key={i.id}
+                href={`/influencers/${i.id}`}
+                className="card block p-4 hover:border-accent-bright/40 transition-colors"
+              >
+                <div className="flex items-center justify-between gap-3 mb-2">
+                  <div className="font-medium truncate">@{i.handle}</div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <PlatformBadge platform={i.platform} />
+                    <TrendBadge trend={i.engagementTrend} />
+                  </div>
+                </div>
+                <div className="text-xs text-text-secondary mb-3 line-clamp-2">{i.niche || "—"}</div>
+                <div className="grid grid-cols-2 gap-3 text-[11px] text-text-muted mb-3">
+                  <div>
+                    <div className="uppercase tracking-wider">Followers</div>
+                    <div className="font-mono text-sm text-text-primary mt-0.5">{i.followerCount.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="uppercase tracking-wider">Posts/wk</div>
+                    <div className="font-mono text-sm text-text-primary mt-0.5">{i.postingFrequency}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-mono text-xs w-7 text-text-muted shrink-0">{i.relevanceScore}</span>
+                  <ScoreBar score={i.relevanceScore} />
+                </div>
+                <SocialLinks links={i.socialLinks ?? []} variant="compact" emptyText="" />
+              </Link>
+            ))}
+          </div>
+
+          {/* md+: table with horizontal scroll as a safety net. */}
+          <div className="hidden md:block card overflow-x-auto">
+            <table className="w-full text-sm min-w-[860px]">
+              <thead className="text-[11px] uppercase tracking-wider text-text-muted bg-bg-elevated/50">
+                <tr>
+                  <Th label="Handle" onClick={() => toggleSort("handle")} active={sortKey === "handle"} dir={sortDir} />
+                  <th className="px-4 py-3 text-left">Platform</th>
+                  <th className="px-4 py-3 text-left">Niche</th>
+                  <Th label="Followers" onClick={() => toggleSort("followerCount")} active={sortKey === "followerCount"} dir={sortDir} />
+                  <Th label="Posts/wk" onClick={() => toggleSort("postingFrequency")} active={sortKey === "postingFrequency"} dir={sortDir} />
+                  <th className="px-4 py-3 text-left">Trend</th>
+                  <Th label="Relevance" onClick={() => toggleSort("relevanceScore")} active={sortKey === "relevanceScore"} dir={sortDir} />
+                  <th className="px-4 py-3 text-left">Links</th>
+                  <th className="px-4 py-3" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-bg-border">
+                {filtered.map((i) => (
+                  <tr key={i.id} className="hover:bg-bg-elevated/30 transition-colors">
+                    <td className="px-4 py-3 font-medium">@{i.handle}</td>
+                    <td className="px-4 py-3"><PlatformBadge platform={i.platform} /></td>
+                    <td className="px-4 py-3 text-text-secondary">{i.niche}</td>
+                    <td className="px-4 py-3 font-mono">{i.followerCount.toLocaleString()}</td>
+                    <td className="px-4 py-3 font-mono">{i.postingFrequency}</td>
+                    <td className="px-4 py-3"><TrendBadge trend={i.engagementTrend} /></td>
+                    <td className="px-4 py-3 w-40">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs w-7">{i.relevanceScore}</span>
+                        <ScoreBar score={i.relevanceScore} />
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 max-w-[260px]">
+                      <SocialLinks links={i.socialLinks ?? []} variant="compact" emptyText="—" />
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <Link href={`/influencers/${i.id}`} className="text-accent-glow hover:text-accent-bright text-xs">
+                        Open →
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );
